@@ -1,0 +1,236 @@
+% =============================================================================
+% Multi-Asset Statistical Arbitrage via Regularized Regression, Nonlinear
+% Extensions, and a Low-Latency C++ Execution Engine
+%
+% CANONICAL SOURCE OF TRUTH for the report. Built by report/build_report.py,
+% which (a) regenerates figures/tables from results/, (b) compiles this to PDF
+% when a TeX engine is available, and (c) always renders an HTML preview.
+%
+% Compile anywhere with a normal TeX distribution:
+%   latexmk -pdf report.tex     (or: pdflatex -> biber -> pdflatex x2)
+% =============================================================================
+\documentclass[11pt]{article}
+
+% --- Packages (per spec Section 6.2) ---
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage[table]{xcolor}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{threeparttable}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage[style=authoryear,maxcitenames=2,sorting=nyt,backend=biber]{biblatex}
+\addbibresource{references.bib}
+
+% --- Theorems/environments ---
+\newtheorem{assumption}{Assumption}[section]
+\newtheorem{proposition}{Proposition}[section]
+
+% --- Convenience commands ---
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\half}{\tfrac{1}{2}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+
+% --- Title ---
+\title{\bfseries Multi-Asset Statistical Arbitrage via Regularized Regression,\\
+       Nonlinear Extensions, and a Low-Latency C++ Execution Engine}
+\author{Research and Engineering Deliverable\\[2pt] \small Autonomous Agent Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% =============================================================================
+% 1. ABSTRACT
+% =============================================================================
+\section*{Abstract}
+\label{sec:abstract}
+\emph{[Filled in the final Part. One paragraph: the question, the method, and the
+headline -- honest -- finding. States whether, after multiple-testing correction,
+transaction costs, and out-of-sample validation, a statistically defensible
+statistical-arbitrage edge exists in the studied universe, and under what conditions.]
+}
+\vspace{2em}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+% 2. INTRODUCTION & MOTIVATION
+% =============================================================================
+\section{Introduction and Motivation}
+\label{sec:intro}
+
+Economic rationale for basket statistical arbitrage. A tradeable residual is defined
+relative to an economically motivated basket of related assets, not an arbitrary
+regressor set. Position: short the target / long the basket (or the reverse) when the
+residual deviates beyond a statistically justified threshold; the position is sized by
+the estimated weights.
+
+\textbf{Literature context.}
+\begin{itemize}
+  \item \cite{avellaneda2010statistical}: systematic factor-based stat-arb with PCA
+    and sector ETFs; the central reference for basket selection and residual dynamics.
+  \item \cite{dofaff2010does}: does pairs trading still work after costs; emphasizes
+    cost sensitivity and mean-reversion half-life.
+  \item \cite{gatev2006pairs}: the canonical pairs-trading profitability study and its
+    critique of data-snooping (top-decile selection bias).
+  \item \cite{dieboldmariano1995}: forecast comparison methodology used here.
+  \item \cite{white2000realitycheck}, \cite{hansen2005test}: data-snooping tests
+    (White Reality Check, Hansen's SPA) used to answer ``is the best Sharpe real?''
+\end{itemize}
+
+Our contribution: a walk-forward, cost-aware, C++-accelerated, adversarial
+self-critiqued version of the basket stat-arb idea, with explicit multiple-testing
+correction and honest discussion of what it does and does not replicate.
+
+\subsection{The base model}
+\label{sec:basemodel}
+For a target asset $Y_t$ regressed on a basket of $n$ candidate assets $X_{1,t},\dots,X_{n,t}$:
+\begin{equation}
+  Y_t = \alpha + \sum_{i=1}^{n}\beta_i\,X_{i,t} + \eps_t ,
+  \label{eq:basemodel}
+\end{equation}
+where $\eps_t$ is the tradeable signal. The specification of which $X$'s to include,
+how to estimate $\beta$, and how to map $\eps_t$ to positions is the substance of this
+report.
+
+% =============================================================================
+% 3. DATA
+% =============================================================================
+\section{Data}
+\label{sec:data}
+\emph{[Filled in Part 1.] Sources, cleaning, adjustment methodology, universe
+description, survivorship-bias analysis, summary statistics table
+(regenerated from results/data_summary.csv).}
+
+% =============================================================================
+% 4. METHODOLOGY
+% =============================================================================
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Estimator derivations}
+\label{sec:estimators}
+\emph{[Full derivations filled in Part 2/5.]}
+
+\subsubsection{Ordinary least squares}
+Closed-form estimator
+\begin{equation}
+  \hat\beta = \bigl(X^{\top}X\bigr)^{-1}X^{\top}Y ,
+  \label{eq:ols}
+\end{equation}
+derived by minimizing the residual sum of squares. Gauss--Markov assumptions and what
+happens when they are violated in financial time series (non-i.i.d. errors,
+heteroskedasticity, serial correlation) are treated here.
+
+\subsubsection{Ridge regression}
+\begin{equation}
+  \hat\beta_{\mathrm{ridge}} = \bigl(X^{\top}X + \lambda I\bigr)^{-1}X^{\top}Y ,
+  \label{eq:ridge}
+\end{equation}
+with geometric and Bayesian (MAP under a Gaussian prior) interpretations.
+
+\subsubsection{Lasso}
+Via subgradient conditions; no closed form. Coordinate descent / LARS is described.
+
+\subsubsection{Principal component regression}
+Via the eigendecomposition of the covariance matrix; connection to market/sector
+factor structure.
+
+\subsection{Statistical diagnostics}
+\label{sec:diagnostics}
+\emph{[Definitions, null hypotheses, and joint interpretation filled in Part 2/6.]}
+Stationarity (ADF, KPSS), cointegration (Engle--Granger, Johansen), residual
+autocorrelation (Durbin--Watson, Ljung--Box), heteroskedasticity (Breusch--Pagan /
+White), Newey--West HAC correction, and the Ornstein--Uhlenbeck mean-reversion fit
+with half-life $\ln(2)/\theta$ compared to the holding period.
+
+\subsection{Multiple-testing correction}
+\label{sec:multtest}
+Bonferroni, White Reality Check, Hansen's SPA. \emph{[Numeric result in Part 10.]}
+
+\subsection{Forecast comparison}
+Diebold--Mariano test across model pairs.
+
+% =============================================================================
+% 5. MODEL COMPARISON RESULTS
+% =============================================================================
+\section{Model Comparison Results}
+\label{sec:modelcomparison}
+OLS / Ridge / Lasso / Elastic Net / PCA / Kalman. In-sample and out-of-sample $R^2$,
+coefficient stability over time, computational cost. \emph{[Filled in Parts 5, 8.]}
+
+% =============================================================================
+% 6. NONLINEAR & ADAPTIVE EXTENSIONS
+% =============================================================================
+\section{Nonlinear and Adaptive Extensions}
+\label{sec:nonlinear}
+Gradient-boosted trees / shallow network, RESET test, learning curves, honest
+bias--variance assessment; Kalman-filtered time-varying beta. \emph{[Parts 8, 9.]}
+
+% =============================================================================
+% 7. BACKTEST RESULTS
+% =============================================================================
+\section{Backtest Results}
+\label{sec:backtest}
+Gross vs.\ net of costs, cost sensitivity, regime breakdown, bootstrap confidence
+intervals. \emph{[Parts 4, 7.]}
+
+% =============================================================================
+% 8. ROBUSTNESS AND STATISTICAL VALIDITY
+% =============================================================================
+\section{Robustness and Statistical Validity}
+\label{sec:robustness}
+Multiple-testing correction numbers, Diebold--Mariano results, sensitivity heatmaps.
+\emph{[Parts 6, 10.]}
+
+% =============================================================================
+% 9. SYSTEM ARCHITECTURE & LATENCY ANALYSIS
+% =============================================================================
+\section{System Architecture and Latency Analysis}
+\label{sec:architecture}
+C++ design rationale, cache-efficiency benchmarks, latency histograms.
+\emph{[Parts 3, 11.]}
+
+% =============================================================================
+% 10. DISCUSSION: WHAT THIS DOES AND DOESN'T REPLICATE
+% =============================================================================
+\section{Discussion: What This Does and Does Not Replicate}
+\label{sec:nonreplicate}
+\emph{[Filled in Part 12.] Explicit, specific: no proprietary alternative data; no
+colocated / FPGA-level execution; no cross-asset-class integration; no live capital
+allocation feedback loops -- and why each matters at real fund level.]}
+
+% =============================================================================
+% 11. CONCLUSION
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+\emph{[Filled in Part 12.] Clear, honest statement of whether a statistically defensible
+edge exists after all corrections and costs, and under what conditions.]}
+
+% =============================================================================
+% 12. REFERENCES
+% =============================================================================
+\printbibliography
+
+% =============================================================================
+% 13. APPENDIX
+% =============================================================================
+\appendix
+\section{Additional Derivations and Diagnostic Tables}
+\label{sec:appendix}
+\emph{[Extended derivations and extra diagnostic tables in later Parts.]}
+
+\end{document}

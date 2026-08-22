@@ -1,0 +1,14 @@
+# Python research/plotting stack (install with: pip install --user --break-system-packages -r environment/requirements.txt)
+numpy
+pandas
+scipy
+statsmodels
+matplotlib
+seaborn
+scikit-learn
+joblib
+yfinance
+reportlab
+pyyaml
+# cmake is a build tool for the C++ engine (also pip-installable user-level)
+cmake

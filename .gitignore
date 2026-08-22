@@ -1,0 +1,57 @@
+# --- Build artifacts ---
+/build/
+build/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.exe
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile.local
+
+# --- Raw / processed market data (never commit) ---
+# Keep the directory placeholders (.gitkeep) but ignore their contents.
+/data/raw/*
+!/data/raw/.gitkeep
+/data/processed/*
+!/data/processed/.gitkeep
+/data/manifest/*.json
+!data/manifest/*.md
+
+# --- Generated results (large binaries & figures are reproducible) ---
+/results/figures/*.png
+/results/figures/*.pdf
+/results/figures/*.svg
+/results/tables/*.csv
+/results/metrics/*.json
+/results/backtests/*.bin
+/results/backtests/*.csv
+
+# --- Report build intermediates ---
+/report/report.pdf
+/report/report.html
+/report/*.aux
+/report/*.bbl
+/report/*.blg
+/report/*.log
+/report/*.out
+/report/*.toc
+/report/*.fls
+/report/*.fdb_latexmk
+
+# --- Python ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# --- Editor / OS ---
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
