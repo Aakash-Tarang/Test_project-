@@ -7,6 +7,10 @@ env:
 check:
 	./environment/check.sh
 
+# Run the data pipeline (download->clean->QA->summary). SRC=github|yahoo
+data:
+	./scripts/data/run_pipeline.sh --source $(or $(SRC),github)
+
 # Build the C++ engine (from Part 3 onward)
 build:
 	cmake -S src -B build

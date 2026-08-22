@@ -33,6 +33,9 @@ Makefile.local
 # --- Report build intermediates ---
 /report/report.pdf
 /report/report.html
+/report/tables/*.tex
+/report/figures/*
+!/report/figures/.gitkeep
 /report/*.aux
 /report/*.bbl
 /report/*.blg

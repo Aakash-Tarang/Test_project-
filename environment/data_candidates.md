@@ -1,5 +1,14 @@
 # Real Market Data — Candidate GitHub Sources
 
+## ✅ SELECTED (Part 1, 2026-08-22)
+**Primary in-sandbox source: `ashishpatel26/NYSE-STOCK_MARKET-ANALYSIS-USING-LSTM`**
+- Classic NYSE (Kaggle) dataset: 501 US securities, daily OHLCV, split-adjusted prices, GICS sectors, quarterly fundamentals, span 2010-01-04..2016-12-30.
+- Downloaded via GitHub tarball (`api.github.com/repos/.../tarball/HEAD`) — the only reachable host in this sandbox.
+- **Limitation (disclosed in report §Data):** ~7-year span (< 10-yr target) and a 2016 constituent snapshot (survivorship bias).
+- **Upgrade path:** `scripts/data/download.py --source yahoo` (user runs locally) produces the ≥10-year, fully-adjusted (split+dividend) Yahoo panel 2010→present for the 505-ticker S&P 500 list. Pipeline is source-agnostic.
+
+---
+
 **Constraint:** only `github.com` / `api.github.com` / `codeload.github.com` are reachable, so real daily equity OHLCV must come from a GitHub-hosted dataset (downloaded as a repo tarball). Yahoo/stooq/Nasdaq APIs are blocked at runtime.
 
 **Part 1 must:** (1) select one primary source after a QA pass, (2) download via tarball, (3) clean to a uniform schema, (4) document source + caveats + retrieval date, (5) commit only the *pipeline + manifest*, never the raw data.

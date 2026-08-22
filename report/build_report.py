@@ -28,7 +28,17 @@ def run(cmd, cwd=None, silent=True):
 
 def regenerate():
     """(Re)generate figures/tables from results/ using scripts/."""
-    # Wired up in Part 1+ (scripts/plot_*.py, scripts/make_tables.py). Currently a no-op.
+    scripts = [
+        os.path.join(ROOT, "scripts", "analysis", "make_data_summary.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_report_data.py"),
+    ]
+    for s in scripts:
+        if os.path.exists(s):
+            rc, out, err = run(["python3", s])
+            if rc != 0:
+                print(f"  [warn] {os.path.basename(s)} failed:\n{err[-500:]}")
+            elif out.strip():
+                print(f"  [ok]   {os.path.basename(s)}")
     return
 
 
@@ -60,9 +70,24 @@ def compile_latex(engine):
     return os.path.exists(out)
 
 
+def copy_figures_to_report():
+    """Copy generated figures from results/figures into report/figures so both the
+    LaTeX (\includegraphics{figures/...}) and the HTML preview resolve them."""
+    src = os.path.join(ROOT, "results", "figures")
+    dst = os.path.join(REPORT, "figures")
+    if not os.path.isdir(src):
+        return
+    os.makedirs(dst, exist_ok=True)
+    for f in os.listdir(src):
+        if f.endswith((".png", ".pdf")):
+            import shutil
+            shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
+
+
 def render_html_preview():
     """Self-contained HTML preview. Math rendered to SVG images via matplotlib
     (so no CDN / network is needed). In Part 0 the content is the report skeleton."""
+    copy_figures_to_report()
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -106,6 +131,27 @@ def render_html_preview():
         html.append(f"<li>{h}</li>")
     html.append("</ol>")
     html.append("<p>Subsections: " + ", ".join(subheaders) + "</p>")
+
+    # Embed generated data tables + figures (Section 3) so the preview is substantive.
+    import glob
+    data_tab = os.path.join(ROOT, "results", "tables", "data_summary.csv")
+    if os.path.exists(data_tab):
+        html.append("<h2>Section 3 — Data (generated)</h2>")
+        try:
+            import csv, io
+            with open(data_tab) as f:
+                rows = list(csv.reader(f))[1:]
+            html.append("<table><tr><th>Metric</th><th>Value</th></tr>")
+            for r in rows:
+                html.append(f"<tr><td>{r[0]}</td><td>{r[1]}</td></tr>")
+            html.append("</table>")
+        except Exception:
+            pass
+        for png in ("universe_by_year.png", "sector_comp.png"):
+            fp = os.path.join(ROOT, "results", "figures", png)
+            if os.path.exists(fp):
+                html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+
     html.append("<hr><p class='meta'>Build time: " + __import__("datetime").datetime.now().isoformat() + "</p>")
     html.append("</body></html>")
 

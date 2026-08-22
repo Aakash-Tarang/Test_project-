@@ -37,6 +37,16 @@ else
   echo "  [SKIP] no report/build_report.py yet"
 fi
 
+echo "== Data pipeline (Part 1) =="
+if [ -f data/processed/universe.csv ]; then
+  chk "cleaned universe present" 0
+  "$PY" scripts/data/qa.py >/dev/null 2>&1; chk "data QA passes (qa.py)" $?
+  [ -f results/tables/data_summary.csv ]; chk "data summary table present" $?
+  [ -f results/figures/universe_by_year.png ]; chk "data figures present" $?
+else
+  echo "  [SKIP] no data/processed/universe.csv yet (run scripts/data/download.py + clean.py)"
+fi
+
 echo ""
 echo "== RESULT: $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

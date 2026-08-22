@@ -110,9 +110,64 @@ report.
 % =============================================================================
 \section{Data}
 \label{sec:data}
-\emph{[Filled in Part 1.] Sources, cleaning, adjustment methodology, universe
-description, survivorship-bias analysis, summary statistics table
-(regenerated from results/data_summary.csv).}
+
+\subsection{Source and acquisition}
+\label{sec:data:source}
+The in-sandbox primary dataset is the classic \emph{NYSE (Kaggle)} dataset,
+obtained from the GitHub repository
+\href{https://github.com/ashishpatel26/NYSE-STOCK_MARKET-ANALYSIS-USING-LSTM}{\texttt{ashishpatel26/NYSE-STOCK\_MARKET-ANALYSIS-USING-LSTM}}
+(downloaded as a repository tarball via the GitHub API on \texttt{\today}).
+It contains daily price data for 501 U.S. securities (an S\&P 500-style snapshot),
+with fields \texttt{date, symbol, open, close, low, high, volume}, plus a
+separate split-adjusted price file, a \texttt{securities} file with GICS sector /
+sub-industry tags, and a quarterly \texttt{fundamentals} file.
+
+\emph{Environment note.} This sandbox cannot reach external market-data endpoints
+(Yahoo Finance, stooq, Nasdaq) at runtime; GitHub is the only reachable data host.
+A companion downloader
+(\texttt{scripts/data/download.py} with \texttt{--source yahoo}) is provided so a
+$\geq\!10$-year panel (2010--present) can be produced on a normal internet
+connection; the cleaning and QA pipeline below is identical for both sources. The
+remainder of this section reports on the in-sandbox GitHub dataset actually used for
+the analyses in this report.
+
+\subsection{Cleaning and adjustment methodology}
+\label{sec:data:cleaning}
+All raw files are ingested by \texttt{scripts/data/clean.py} into a uniform long
+panel with columns
+\[
+\texttt{date},\ \texttt{ticker},\ \texttt{open},\ \texttt{high},\ \texttt{low},\ \texttt{close},\ \texttt{adj\_close},\ \texttt{volume}.
+\]
+Corporate-action handling: for the NYSE source we use the provided split-adjusted
+prices; these are \emph{split}-adjusted only, so all returns in this report are
+\emph{price} (split-adjusted) returns, not total returns -- a documented
+limitation. (When the Yahoo path is used, \texttt{adj\_close} is fully adjusted for
+splits \emph{and} dividends.) Rows with non-positive prices are dropped, and the
+negligible fraction of zero-volume rows (0.002\% in the source) is removed. Duplicate
+(date, ticker) pairs are dropped (last value wins) and the panel is sorted.
+
+\subsection{Universe description}
+\label{sec:data:universe}
+The universe is the 501-name S\&P 500-style snapshot, mapped to 11 GICS sectors.
+A data-quality gate (\texttt{scripts/data/qa.py}) verifies positive prices, no
+missing closes, no duplicate dates, sane volumes, per-symbol span, and calendar-gap
+tolerance; it passes 10/10 checks. Summary statistics are regenerated into
+\autoref{tab:data_summary} directly from the cleaned panel.
+
+\input{tables/data_section.tex}
+
+\subsection{Survivorship-bias discussion}
+\label{sec:data:survivorship}
+This dataset is a 2016-era constituent snapshot with a $\approx\!7$-year daily span
+(2010--2016). Two biases must be disclosed. First, because the panel was assembled
+from a 2016 membership list, names delisted or acquired before 2016 are absent;
+second, the panel is short of the $10$-year minimum span in the specification. The
+constituent \texttt{securities} file records each name's \emph{date first added}, which
+partially identifies membership changes, but a fully survivorship-bias-free panel
+requires the Yahoo-path download (10+ years) plus a historical constituent list
+(e.g.\ the Wikipedia/BlackRock membership history), which we list as the recommended
+upgrade. All results in later sections must therefore be read as conditional on this
+universe and corrected for the multiple tests it entails.
 
 % =============================================================================
 % 4. METHODOLOGY
