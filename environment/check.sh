@@ -71,6 +71,24 @@ echo "== Diagnostics (Part 6) =="
 [ -f results/figures/diagnostics_halflife.png ]; chk "diagnostics half-life figure present" $?
 [ -f report/tables/diagnostics.tex ]; chk "diagnostics table present" $?
 
+echo "== Nonlinear signal extraction + RESET (Part 9) =="
+"$PY" scripts/test_nonlinear.py >/dev/null 2>&1; chk "nonlinear pipeline unit tests pass" $?
+[ -f results/tables/nonlinear_summary.csv ]; chk "nonlinear forecast summary present" $?
+[ -f results/tables/nonlinear_reset.csv ]; chk "nonlinear RESET table present" $?
+[ -f results/tables/nonlinear_trading.csv ]; chk "nonlinear gated-trading table present" $?
+[ -f results/figures/nonlinear_ic.png ]; chk "nonlinear IC figure present" $?
+[ -f results/figures/nonlinear_learning.png ]; chk "nonlinear learning-curve figure present" $?
+[ -f report/tables/nonlinear.tex ]; chk "nonlinear table present" $?
+"$PY" -c "
+import sys,os,csv
+p=os.path.join('results','tables','nonlinear_trading.csv')
+rows=list(csv.reader(open(p)))[1:]
+linear_full=[r for r in rows if 'linear-gate' in r[0] and 'full' in r[1]]
+base_full=[r for r in rows if 'z-threshold' in r[0] and 'full' in r[1]]
+if linear_full and base_full and float(linear_full[0][2])>float(base_full[0][2])+1e-9:
+    sys.exit(1)  # nonlinear gate must NOT beat baseline net of costs (honest gate)
+" >/dev/null 2>&1; chk "nonlinear-gate does not outclaim baseline net Sharpe" $?
+
 echo "== statkit (Part 2) =="
 "$PY" scripts/run_statkit_tests.py >/dev/null 2>&1; chk "statkit unit tests pass" $?
 

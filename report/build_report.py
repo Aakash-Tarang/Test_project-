@@ -51,6 +51,9 @@ def regenerate():
         # Kalman-filtered time-varying hedge (Part 8): capture then render.
         os.path.join(ROOT, "scripts", "analysis", "compare_kalman.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_kalman.py"),
+        # Nonlinear signal extraction + RESET (Part 9): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "compare_nonlinear.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_nonlinear.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -225,6 +228,28 @@ def render_html_preview():
             with open(kt) as f:
                 rws = list(_csv.reader(f))
             html.append("<h2>Kalman vs rolling OLS (Part 8)</h2><table><tr>")
+            for h in rws[0]:
+                html.append(f"<th>{h}</th>")
+            html.append("</tr>")
+            for r in rws[1:]:
+                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
+            html.append("</table>")
+        except Exception:
+            pass
+
+    # Embed Part 9 nonlinear figures (Nonlinear/Adaptive section).
+    for png in ("nonlinear_ic.png", "nonlinear_reset.png", "nonlinear_sharpe.png",
+                "nonlinear_learning.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+    nt = os.path.join(ROOT, "results", "tables", "nonlinear_summary.csv")
+    if os.path.exists(nt):
+        try:
+            import csv as _csv
+            with open(nt) as f:
+                rws = list(_csv.reader(f))
+            html.append("<h2>Nonlinear forecast quality (Part 9)</h2><table><tr>")
             for h in rws[0]:
                 html.append(f"<th>{h}</th>")
             html.append("</tr>")

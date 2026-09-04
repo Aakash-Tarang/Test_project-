@@ -11,10 +11,11 @@ Provides, with unit tests on synthetic data:
   ou             Ornstein-Uhlenbeck fit + implied half-life
   forecast       Diebold-Mariano forecast comparison
   multtest       Bonferroni; White Reality Check; Hansen SPA
+  misspec        Ramsey RESET test for omitted nonlinearity
   bootstrap      stationary (block) bootstrap
 
 Run the test suite:  python3 scripts/run_statkit_tests.py
 """
-from . import stationarity, cointegration, autocorr, heterosk, hac, ou, forecast, multtest, bootstrap  # noqa: F401
+from . import stationarity, cointegration, autocorr, heterosk, hac, ou, forecast, multtest, misspec, bootstrap  # noqa: F401
 
 __version__ = "0.1.0"

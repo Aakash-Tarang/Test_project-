@@ -591,6 +591,126 @@ Gradient-boosted trees / shallow network, RESET test, learning curves, honest
 bias--variance assessment (Part 9); Kalman-filtered time-varying beta (this section,
 Part 8).
 
+\subsection{Nonlinear signal extraction (GBM, MLP, RESET)}
+\label{sec:nonlinear_sig}
+Parts 4--8 traded a single deviation $z_t$ -- the standardized causal rolling-hedge
+residual -- through a linear threshold policy, and found the edge was real but small and
+cost-dominated. A natural next question is whether the relationship between the level of
+the spread and its subsequent reversion is genuinely linear, or whether nonlinear
+signal extraction can recover incremental value that a linear rule leaves on the table.
+This subsection tests that question honestly with two complementary nonlinear
+estimators -- gradient-boosted trees (\texttt{HistGradientBoostingRegressor}, ``GBM'')
+and a shallow feed-forward network (``MLP'') -- benchmarked against the linear Ridge on
+the \emph{same} causal feature set, and reports a Ramsey RESET misspecification test
+for the linear forecasting equation.
+
+\paragraph{Forecast task.} We predict $R_t^{h}$, the realized $h$-bar ($h=5$)
+market-neutral return of fading a rich causal rolling-OLS-120 spread on
+target-vs-basket:
+\begin{equation}
+  R_t^{h} \;=\; -\,\frac{S_{t+h}-S_t}{g_t},\qquad
+  S_t = \log P^{T}_t - \hat\alpha_t - \sum_{j}\hat\beta_{j,t}\log P^{j}_t,
+  \label{eq:nonlin_target}
+\end{equation}
+where $S_t$ is the causal (one-bar-delayed) spread and $g_t=1+\sum|\hat\beta_{j,t}|$ is
+the grossing factor converting a spread change into a return. Predicting $R_t^{h}>0$
+means the model expects a rich spread to revert (short the target, long the basket) --
+exactly the trade the threshold book takes. Each forecaster is fed 11 causal features
+(the current $z$, spread level and changes, 5- and 20-bar rolling volatility of the
+spread, target and basket returns and lags) computed only from bars $\le t$. This is a
+deliberately small, low-capacity feature set: with daily data and a weak signal,
+high-dimensional inputs would only inflate variance (Part 6's lesson) rather than reveal
+structure.
+
+\paragraph{No-lookahead discipline.} Forecasters are fit on a causal \emph{expanding}
+window: at each quarterly (63-bar) boundary the estimator is retrained on every valid
+training bar from the warm-up onward and then predicts only the strictly subsequent
+held-out bars. Features, the $h$-bar target, and the feature standardisation (mean and
+standard deviation computed on the training window only and applied to the held-out
+bars) are all computed causally. The comparison therefore reflects true out-of-sample
+predictive quality with no leakage.
+
+\paragraph{Forecast quality.} \autoref{tab:nonlinear_forecast} reports the out-of-sample
+(2022+) information coefficient (IC) and $R^2$ of each estimator on $R_t^{h}$ for each
+basket; \autoref{fig:nonlinear_ic} plots the ICs. The result is unambiguous:
+\begin{enumerate}[label=\textbf{N\arabic*.}]
+  \item \textbf{Linear wins the forecasting race.} On every basket the linear Ridge
+    attains the highest out-of-sample IC (0.24--0.42) and the only clearly positive
+    out-of-sample $R^2$ (4--17\%). The GBM is second on every basket; its out-of-sample
+    $R^2$ is negative in most baskets, and the (ADBE-only) MLP is broadly comparable to
+    GBM and still below linear. Whatever functional nonlinearity these flexible models
+    can capture on training data does \emph{not} generalise out-of-sample at daily
+    frequency -- the textbook small-signal / low-$N$ regime.
+  \item \textbf{The linear equation is not strongly misspecified.}
+    \autoref{fig:nonlinear_reset} shows the Ramsey RESET $F$-test on the linear
+    regression of $R_t^{h}$ on the causal features (training sample only, to avoid any
+    out-of-sample contamination). Three of the four baskets reject linearity at 5\%
+    (AVGO, GS, CAT), but ADBE -- the basket used throughout Parts 4--8 -- does not
+    ($p\approx0.38$). The RESET evidence for omitted nonlinear structure is thus mixed
+    and, where it exists, coincides with baskets where the flexible models nevertheless
+    fail to turn it into out-of-sample $R^2$.
+  \item \textbf{Learning curves show why.} \autoref{fig:nonlinear_learning} traces the
+    GBM's out-of-sample $R^2$ on a fixed 2019--2020 validation window as the training
+    sample grows. At a few hundred bars the tree ensemble overfits badly
+    ($R^2\approx-0.4$); only near $\sim$2,800 training bars does it turn positive. With
+    $\sim$2,900 training bars available in total (Part 5's expanding design uses even
+    fewer early on), the flexible models never have enough data to out-generalise a
+    regularised linear map on a weak daily signal.
+\end{enumerate}
+
+\paragraph{Net-of-cost verdict.} Forecast $IC$ is a statistical summary; what matters is
+whether a nonlinear signal improves the \emph{traded} result net of costs. We take the
+Part-4 z-threshold book on the ADBE basket and add an entry \emph{gate}: a position is
+opened only when the threshold condition holds \emph{and} the forecaster's predicted
+$R_t^{h}$ points in the same reversion direction. \autoref{tab:nonlinear_trade} and
+\autoref{fig:nonlinear_sharpe} compare the plain book with the three gated variants.
+The honest finding is negative: gating never raises net Sharpe (full-sample or 2022+).
+The linear gate approximately halves the number of trades without improving net Sharpe;
+the GBM gate and MLP gate, whose marginal predictions are less accurate, degrade the
+result further. Conditioning the entry on a nonlinear reversion forecast therefore does
+not recover the incremental edge the statistical tests hint at once transaction costs
+are paid.
+
+\paragraph{Honest conclusion.} On this data the base model of Parts 4--8 was already
+near the practical limit of what linear-in-levels signal extraction recovers net of
+costs. The RESET evidence for omitted nonlinearity is partial (and absent on ADBE), and
+where nonlinear estimators are more flexible they overfit the small daily sample and
+cannot out-generalise a regularised linear map. We therefore do \emph{not} claim that
+nonlinear signal extraction adds value here; the nonlinear extension is retained in the
+research layer as the correct tool to check, and the reported conclusion is that, net of
+costs, it adds nothing reliable beyond the linear baseline. This mirrors Part 8's
+finding that over-adaptation (there in hedge space, here in signal space) does not pay.
+
+\input{tables/nonlinear.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/nonlinear_ic.png}
+\caption{Out-of-sample (2022+) forecast IC of $R_t^{h}$ by basket and estimator. The
+linear baseline dominates in every basket.}
+\label{fig:nonlinear_ic}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/nonlinear_reset.png}
+\caption{Ramsey RESET $p$-values for the linear forecast equation (training sample).
+Linearity is rejected at 5\% in three baskets but not on ADBE.}
+\label{fig:nonlinear_reset}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/nonlinear_sharpe.png}
+\caption{Full-sample net-of-cost Sharpe of the ADBE z-threshold book with and without
+forecaster entry gates. Gating never improves on the plain baseline.}
+\label{fig:nonlinear_sharpe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/nonlinear_learning.png}
+\caption{GBM learning curve on ADBE: out-of-sample $R^2$ (2019--2020) versus training
+sample size. Only near the full sample does it turn positive.}
+\label{fig:nonlinear_learning}
+\end{figure}
+
 \subsection{Kalman-filtered time-varying hedge}
 \label{sec:kalman}
 So far the hedge $\beta$ has been estimated by a fixed-window rolling regression: every
