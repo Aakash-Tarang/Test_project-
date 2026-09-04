@@ -53,6 +53,12 @@ echo "== Model comparison (Part 5) =="
 [ -f results/figures/model_compare_sharpe.png ]; chk "model comparison Sharpe figure present" $?
 [ -f report/tables/model_compare.tex ]; chk "model comparison table present" $?
 
+echo "== Portfolio book + risk controls (Part 7) =="
+"$PY" scripts/analysis/capture_portfolio.py >/dev/null 2>&1; chk "portfolio driver runs" $?
+[ -f results/tables/portfolio_summary.csv ]; chk "portfolio summary present" $?
+[ -f results/figures/portfolio_equity.png ]; chk "portfolio equity figure present" $?
+[ -f report/tables/portfolio.tex ]; chk "portfolio table present" $?
+
 echo "== Diagnostics (Part 6) =="
 "$PY" scripts/analysis/run_diagnostics.py >/dev/null 2>&1; chk "diagnostics driver runs" $?
 [ -f results/tables/diagnostics_summary.csv ]; chk "diagnostics summary present" $?

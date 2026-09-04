@@ -14,6 +14,7 @@
 #include "../src/model/basket_selector.h"
 #include "../src/signal/signal_generator.h"
 #include "../src/portfolio/portfolio_book.h"
+#include "../src/portfolio/risk.h"
 #include "../src/engine/latency_hist.h"
 #include "../src/engine/backtest_engine.h"
 #include "../src/engine/spread_backtest.h"
@@ -401,6 +402,44 @@ static void test_backtest_costs_never_improve_net() {
 }
 
 // ---------------------------------------------------------------------------
+// Portfolio risk controls (Part 7)
+// ---------------------------------------------------------------------------
+static void test_inverse_vol_weights() {
+    // Lower volatility => higher weight; normalized to sum 1.
+    std::vector<double> sig = {2.0, 1.0, 4.0};
+    auto w = statarb::risk::inverse_vol_weights(sig);
+    double s = 0.0;
+    for (double v : w) s += v;
+    CHECK_NEAR(s, 1.0, 1e-12);
+    CHECK(w[1] > w[0] && w[0] > w[2]);   // 1/vol ordering: 1/1 > 1/2 > 1/4
+    CHECK_NEAR(w[0], (1.0 / 2.0) / (1.0 / 2.0 + 1.0 / 1.0 + 1.0 / 4.0), 1e-9);
+    // zero/negative vol entries contribute nothing
+    auto w2 = statarb::risk::inverse_vol_weights({0.0, -1.0, 1.0, 1.0});
+    CHECK_NEAR(w2[0], 0.0, 1e-12);
+    CHECK_NEAR(w2[1], 0.0, 1e-12);
+    CHECK_NEAR(w2[2], 0.5, 1e-12);
+    CHECK_NEAR(w2[3], 0.5, 1e-12);
+}
+
+static void test_risk_gross_net_limits() {
+    // A market-neutral-ish set: +0.5,-0.5,0.4,-0.4 => net ~0, gross 1.8
+    std::vector<double> w = {0.5, -0.5, 0.4, -0.4};
+    double g = 0, n = 0;
+    CHECK(statarb::risk::within_limits(w, 2.0, 0.1, 0.6, g, n));
+    CHECK_NEAR(g, 1.8, 1e-12);
+    CHECK_NEAR(n, 0.0, 1e-12);
+    // breaches gross cap
+    CHECK(!statarb::risk::within_limits(w, 1.5, 0.1, 0.6, g, n));
+    // breaches net cap (concentrated long-only)
+    std::vector<double> lon = {0.9, 0.1};
+    CHECK(!statarb::risk::within_limits(lon, 2.0, 0.2, 0.6, g, n));
+    CHECK_NEAR(g, 1.0, 1e-12);
+    CHECK_NEAR(n, 1.0, 1e-12);
+    // breaches concentration cap
+    CHECK(!statarb::risk::within_limits(w, 2.0, 0.1, 0.3, g, n));
+}
+
+// ---------------------------------------------------------------------------
 // BasketSelector: the five baseline estimators (Part 5)
 // ---------------------------------------------------------------------------
 static void build_dataset(size_t n, size_t p, const std::vector<double>& beta0,
@@ -543,6 +582,8 @@ static double explained_r2(const std::vector<double>& X, const std::vector<doubl
 
 // ---------------------------------------------------------------------------
 int run_engine_tests() {
+    RUN(test_inverse_vol_weights);
+    RUN(test_risk_gross_net_limits);
     RUN(test_selector_ols_recovers_beta);
     RUN(test_selector_ridge_tends_to_ols);
     RUN(test_selector_lasso_sparsifies);
