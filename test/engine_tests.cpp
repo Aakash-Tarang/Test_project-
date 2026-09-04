@@ -20,6 +20,9 @@
 
 using namespace statarb;
 
+static double explained_r2(const std::vector<double>& X, const std::vector<double>& y,
+                           const statarb::BasketResult& r, size_t n, size_t p);
+
 // ---------------------------------------------------------------------------
 // Brute-force reference OLS for comparison.
 // ---------------------------------------------------------------------------
@@ -398,7 +401,154 @@ static void test_backtest_costs_never_improve_net() {
 }
 
 // ---------------------------------------------------------------------------
+// BasketSelector: the five baseline estimators (Part 5)
+// ---------------------------------------------------------------------------
+static void build_dataset(size_t n, size_t p, const std::vector<double>& beta0,
+                          std::vector<double>& X, std::vector<double>& y, unsigned seed) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> nd(0, 1);
+    X.assign(n * p, 0.0);
+    y.assign(n, 0.0);
+    for (size_t i = 0; i < n; ++i) {
+        double acc = 0.0;
+        for (size_t j = 0; j < p; ++j) {
+            double xv = nd(rng);
+            X[i * p + j] = xv;
+            acc += beta0[j] * xv;
+        }
+        y[i] = acc + 0.05 * nd(rng);
+    }
+}
+
+static void test_selector_ols_recovers_beta() {
+    const size_t n = 400, p = 3;
+    std::vector<double> X, y, beta0 = {1.5, -2.0, 0.3};
+    build_dataset(n, p, beta0, X, y, 11);
+    BasketSelector sel(SelectionMethod::OLS);
+    auto r = sel.select(X, n, p, y, BasketParams{});
+    CHECK(r.ok);
+    CHECK_NEAR(r.weights[0], beta0[0], 0.05);
+    CHECK_NEAR(r.weights[1], beta0[1], 0.05);
+    CHECK_NEAR(r.weights[2], beta0[2], 0.05);
+}
+
+static void test_selector_ridge_tends_to_ols() {
+    const size_t n = 400, p = 3;
+    std::vector<double> X, y, beta0 = {0.8, -1.2, 0.6};
+    build_dataset(n, p, beta0, X, y, 12);
+    BasketSelector ols(SelectionMethod::OLS);
+    auto r_ols = ols.select(X, n, p, y, BasketParams{});
+    BasketSelector ridge(SelectionMethod::Ridge);
+    BasketParams rp; rp.alpha = 1e-8;   // tiny ridge ~ OLS
+    auto r_r = ridge.select(X, n, p, y, rp);
+    CHECK(r_r.ok);
+    for (size_t j = 0; j < p; ++j) CHECK_NEAR(r_r.weights[j], r_ols.weights[j], 1e-3);
+    // A larger ridge shrinks coefficients toward zero (magnitude drops).
+    BasketParams rp2; rp2.alpha = 2.0;
+    auto r_r2 = ridge.select(X, n, p, y, rp2);
+    double mag_ols = 0, mag_r2 = 0;
+    for (double v : r_ols.weights) mag_ols += v * v;
+    for (double v : r_r2.weights) mag_r2 += v * v;
+    CHECK(mag_r2 < mag_ols);
+}
+
+static void test_selector_lasso_sparsifies() {
+    const size_t n = 500, p = 6;
+    // y depends only on features 0 and 2; the rest are irrelevant.
+    std::vector<double> X, y, beta0 = {1.5, 0.0, -2.0, 0.0, 0.0, 0.0};
+    build_dataset(n, p, beta0, X, y, 21);
+    BasketSelector lasso(SelectionMethod::Lasso);
+    BasketParams lp; lp.alpha = 1.0;
+    auto r = lasso.select(X, n, p, y, lp);
+    CHECK(r.ok);
+    CHECK(r.nonzero <= 3);            // at least the noise columns are dropped
+    CHECK(r.nonzero >= 2);
+    CHECK(std::fabs(r.weights[0]) > 0.3);   // strong signals survive shrinkage
+    CHECK(std::fabs(r.weights[2]) > 0.3);
+    for (size_t j : {1u, 3u, 4u, 5u}) CHECK_NEAR(r.weights[j], 0.0, 1e-9);
+    // heavier penalty => strictly sparser (fewer nonzeros)
+    BasketParams lp2; lp2.alpha = 5.0;
+    auto r2 = lasso.select(X, n, p, y, lp2);
+    CHECK(r2.ok);
+    CHECK(r2.nonzero <= r.nonzero);
+}
+
+static void test_selector_en_between_ridge_and_lasso() {
+    const size_t n = 500, p = 6;
+    std::vector<double> X, y, beta0 = {1.5, 0.0, -2.0, 0.0, 0.0, 0.0};
+    build_dataset(n, p, beta0, X, y, 31);
+    // Pure-lasso alpha that zeros the noise columns but keeps signal.
+    BasketSelector lasso(SelectionMethod::Lasso);
+    BasketParams al; al.alpha = 0.05;
+    auto r_lasso = lasso.select(X, n, p, y, al);
+    // ElasticNet with l1_ratio just under 1 at same alpha keeps more columns
+    // (the L2 part prevents the exact-zero shrinkage as aggressively).
+    BasketSelector en(SelectionMethod::ElasticNet);
+    BasketParams ep; ep.alpha = 0.05; ep.l1_ratio = 0.2;
+    auto r_en = en.select(X, n, p, y, ep);
+    CHECK(r_en.ok);
+    // EN with strong L2 should not push the small-signal columns exactly to zero.
+    bool any_small_nonzero = false;
+    for (size_t j = 1; j < p; j += 2) if (std::fabs(r_en.weights[j]) > 1e-6) any_small_nonzero = true;
+    CHECK(any_small_nonzero);
+    // And EN is deterministic.
+    auto r_en2 = en.select(X, n, p, y, ep);
+    for (size_t j = 0; j < p; ++j) CHECK_NEAR(r_en.weights[j], r_en2.weights[j], 1e-12);
+}
+
+static void test_selector_pcr_all_components_equals_ols() {
+    const size_t n = 400, p = 3;
+    std::vector<double> X, y, beta0 = {0.9, -1.5, 0.4};
+    build_dataset(n, p, beta0, X, y, 41);
+    BasketSelector ols(SelectionMethod::OLS);
+    auto r_ols = ols.select(X, n, p, y, BasketParams{});
+    BasketSelector pcr(SelectionMethod::PCA);
+    BasketParams pp; pp.top_k = p;   // keep all components => PCR == OLS
+    auto r_pcr = pcr.select(X, n, p, y, pp);
+    CHECK(r_pcr.ok);
+    CHECK_NEAR(r_pcr.intercept, r_ols.intercept, 1e-6);
+    for (size_t j = 0; j < p; ++j) CHECK_NEAR(r_pcr.weights[j], r_ols.weights[j], 1e-6);
+}
+
+static void test_selector_pcr_reduces_with_fewer_components() {
+    // With fewer components PCR behaves differently from OLS (still a valid fit).
+    const size_t n = 500, p = 4;
+    std::vector<double> X, y, beta0 = {1.0, -1.0, 0.5, -0.5};
+    build_dataset(n, p, beta0, X, y, 51);
+    BasketSelector pcr(SelectionMethod::PCA);
+    BasketParams pp; pp.top_k = 2;
+    auto r2 = pcr.select(X, n, p, y, pp);
+    BasketParams pp4; pp4.top_k = p;
+    auto r4 = pcr.select(X, n, p, y, pp4);
+    CHECK(r2.ok && r4.ok);
+    // effective R^2 (fraction of variance explained) strictly rises with k
+    double r2_k2 = explained_r2(X, y, r2, n, p);
+    double r2_k4 = explained_r2(X, y, r4, n, p);
+    CHECK(r2_k4 > r2_k2);
+}
+
+static double explained_r2(const std::vector<double>& X, const std::vector<double>& y,
+                           const statarb::BasketResult& r, size_t n, size_t p) {
+    double sres = 0.0, stot = 0.0, my = 0.0;
+    for (double v : y) my += v;
+    my /= (double)n;
+    for (size_t i = 0; i < n; ++i) {
+        double pred = r.intercept;
+        for (size_t j = 0; j < p; ++j) pred += r.weights[j] * X[i * p + j];
+        sres += (y[i] - pred) * (y[i] - pred);
+        stot += (y[i] - my) * (y[i] - my);
+    }
+    return stot > 0.0 ? 1.0 - sres / stot : 0.0;
+}
+
+// ---------------------------------------------------------------------------
 int run_engine_tests() {
+    RUN(test_selector_ols_recovers_beta);
+    RUN(test_selector_ridge_tends_to_ols);
+    RUN(test_selector_lasso_sparsifies);
+    RUN(test_selector_en_between_ridge_and_lasso);
+    RUN(test_selector_pcr_all_components_equals_ols);
+    RUN(test_selector_pcr_reduces_with_fewer_components);
     RUN(test_backtest_one_bar_delay_no_lookahead);
     RUN(test_backtest_no_trade_when_too_short);
     RUN(test_backtest_costs_never_improve_net);

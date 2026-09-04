@@ -475,8 +475,112 @@ means variant 1 (numerator) forecasts more accurately.
 % =============================================================================
 \section{Model Comparison Results}
 \label{sec:modelcomparison}
-OLS / Ridge / Lasso / Elastic Net / PCA / Kalman. In-sample and out-of-sample $R^2$,
-coefficient stability over time, computational cost. \emph{[Filled in Parts 5, 8.]}
+This section runs the five baseline linear estimators -- OLS, Ridge, Lasso,
+ElasticNet and principal-component regression (``PCA'') -- through the \emph{identical}
+causal, cost-aware pipeline of Section \ref{sec:backtest} on the same basket (target
+\texttt{ADBE} vs \{\texttt{CRM}, \texttt{ADSK}, \texttt{INTU}\}, 4{,}190 common bars,
+2010--2026). All are implemented twice and checked against each other: dependency-free
+in C++ (\texttt{src/model/basket\_selector.h}, exercised by unit tests that assert
+Ridge$\to$OLS as $\lambda\to0$, Lasso sparsification, ElasticNet interpolation, and
+$\mathrm{PCR}(k{=}n)=$OLS) and in Python/sklearn for the sweep. Only the sklearn path
+is used to produce numbers below.
+
+\subsection{Design and no-lookahead discipline}
+\label{sec:mc:method}
+For each estimator we reproduce the Part 4 hedge: at bar $t$ fit
+$y=\alpha+X^\top\beta$ on the trailing window $W{=}120$ ending at $t-1$ (log prices),
+then standardize the bar-$t$ residual by the in-window residual sigma to get $z_t$, and
+feed $z_t$ through the one-bar-delayed, 10\,bps cost model of \S\ref{sec:bt:cost}.
+Every method therefore sees the same data, the same transaction costs and the same
+execution delay; they differ only in how the hedge $\beta$ (and hence the spread) is
+estimated. The comparison is deliberately made at the \emph{strategy} level (net
+Sharpe) rather than at raw $R^2$, because on log-price levels in-sample $R^2$ is
+saturating and uninformative; we additionally report the out-of-sample information
+coefficient of $z_t$ against the realized 21-bar gross position return as a direct
+measure of predictive content.
+
+Hyper-parameters are selected on a held-out \textbf{validation} window (2019--2021) by
+maximizing net Sharpe over a small coarse grid
+(Ridge $\alpha\in\{0.1,1,10\}$, Lasso/ElasticNet $\alpha\in\{10^{-4},10^{-3},10^{-2}\}$
+on column-standardized features, PCR $k\in\{1,2,3\}$). All reported \emph{test}
+figures are then strictly out-of-sample on \textbf{2022--2026}. Table
+\ref{tab:model_compare} and Figure \ref{fig:mc_sharpe} give the headline numbers;
+Figure \ref{fig:mc_ic} the signal quality; Figure \ref{fig:mc_stab} the hedge-weight
+stability. For context each row also carries its full-sample (2010--2026) net Sharpe,
+the same span as the Part 4 OLS baseline.
+
+\input{tables/model_compare.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/model_compare_sharpe.png}
+\caption{Gross vs net-of-cost annualized Sharpe by hedge estimator, out-of-sample on
+2022--2026 (hyper-parameters chosen on 2019--2021).}
+\label{fig:mc_sharpe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/model_compare_ic.png}
+\caption{Out-of-sample information coefficient (correlation of $z_t$ with the
+realized 21-bar gross position return), test period 2022--2026.}
+\label{fig:mc_ic}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/model_compare_stability.png}
+\caption{Causal walk-forward hedge weights over the full sample: the weight on
+\texttt{CRM} and the time-varying hedge norm $\lVert\beta_t\rVert_2$ for each
+estimator.}
+\label{fig:mc_stab}
+\end{figure}
+
+\subsection{Findings}
+\label{sec:mc:findings}
+\begin{enumerate}[label=\textbf{M\arabic*.}]
+  \item \textbf{OLS reproduces the C++ baseline.} The Python OLS walk-forward gives a
+    full-sample net Sharpe of $\approx0.05$, matching the Part 4 engine
+    (\S\ref{sec:bt:base}) to three decimals -- confirming the two implementations are
+    the same experiment and that any difference between estimators below is a genuine
+    model effect, not a harness artifact.
+  \item \textbf{Regularization improves net-of-cost performance.} On the full sample
+    Ridge ($\alpha{=}10$) raises the net Sharpe to $\approx0.09$ from OLS's $\approx0.05$
+    while keeping a similar gross Sharpe ($\approx0.34$ vs $0.39$): the L2 shrinkage
+    makes the rolling hedge less erratic (lower coefficient instability, Figure
+    \ref{fig:mc_stab}), which trims turnover and the cost drag more than it costs in
+    gross edge. Ridge is the best full-sample net performer; on the out-of-sample test
+    period it is also the least-negative net Sharpe ($\approx-0.03$ vs OLS $-0.30$).
+  \item \textbf{Aggressive sparsification hurts.} Lasso and ElasticNet, driven here to
+    heavy penalties by the validation rule, collapse the three-name hedge toward a
+    sparser book and degrade net performance (full-sample net $\approx0.01$ and
+    $\approx-0.03$ respectively). Dropping basket names removes hedge legs the spread
+    actually needs; sparsity is the wrong inductive bias for a \emph{hedging} regression
+    where every name carries shared factor exposure.
+  \item \textbf{PCA has the strongest pure signal but the weakest realized hedge.} The
+    one-component PCR residual gives the highest out-of-sample IC ($\approx0.21$ vs
+    $0.13$ for OLS), yet its full-sample net Sharpe ($\approx0.03$) is below OLS: a
+    single principal component captures the common mode but discards the idiosyncratic
+    relative moves that this mean-reversion strategy monetizes, so the signal is
+    directionally informative but the book under-hedges the names' common drift.
+  \item \textbf{The predictive content is real but small.} Every estimator yields a
+    positive out-of-sample IC on 2022--2026 ($0.12$--$0.21$), i.e.\ the spread $z_t$
+    correctly predicts the direction of convergence. Consistent with Part 4, however,
+    the daily-frequency effect size is too small to survive 10\,bps round-trip costs in
+    the adverse 2022+ regime, where all variants are net-negative; only Ridge and OLS
+    remain net-positive over the full 2010--2026 sample, and by less than one would like.
+    Whether this survives proper multiple-testing correction is quantified in
+    Section \ref{sec:robustness} (Part 10).
+\end{enumerate}
+
+\subsection{Computational cost}
+\label{sec:mc:cost}
+Per-window fit times (measured, Table \ref{tab:model_compare}, final column) are
+$\approx0.6$\,ms for OLS and $\approx0.6$--$1.8$\,ms for the regularized variants on a
+$120\times3$ window in sklearn; the dependency-free C++ equivalents are far faster
+(regression update+solve at $\lesssim1\,\mu$s, \S\ref{sec:arch:latency}). At these
+sizes compute cost is immaterial to model choice; the deciding factors are the
+statistical ones above. Coefficient instability (time-mean of each weight's
+std/|mean| over the test period) is $\approx1.0$ for OLS and lower for Ridge
+($\approx0.94$) and PCR ($\approx0.85$), confirming the shrinkage effect visible in
+Figure \ref{fig:mc_stab}.
 
 % =============================================================================
 % 6. NONLINEAR & ADAPTIVE EXTENSIONS

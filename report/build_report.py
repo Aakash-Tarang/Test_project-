@@ -39,6 +39,9 @@ def regenerate():
         # Spread backtest (Part 4): capture then render.
         os.path.join(ROOT, "scripts", "analysis", "capture_backtest.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_backtest.py"),
+        # Baseline model comparison (Part 5): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "compare_models.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_model_comparison.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -168,6 +171,13 @@ def render_html_preview():
 
     # Embed Part 4 backtest equity curve + cost sensitivity (Section 7).
     for png in ("equity_curve.png", "cost_sensitivity.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+
+    # Embed Part 5 model-comparison figures (Section 5).
+    for png in ("model_compare_sharpe.png", "model_compare_ic.png",
+                "model_compare_stability.png"):
         fp = os.path.join(ROOT, "results", "figures", png)
         if os.path.exists(fp):
             html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")

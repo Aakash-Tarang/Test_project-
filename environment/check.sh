@@ -48,6 +48,11 @@ echo "== Spread backtest (Part 4) =="
 [ -f results/tables/backtest_summary.csv ]; chk "backtest summary table present" $?
 [ -f results/figures/equity_curve.png ]; chk "equity curve figure present" $?
 
+echo "== Model comparison (Part 5) =="
+[ -f results/tables/model_compare_summary.csv ]; chk "model comparison summary present" $?
+[ -f results/figures/model_compare_sharpe.png ]; chk "model comparison Sharpe figure present" $?
+[ -f report/tables/model_compare.tex ]; chk "model comparison table present" $?
+
 echo "== statkit (Part 2) =="
 "$PY" scripts/run_statkit_tests.py >/dev/null 2>&1; chk "statkit unit tests pass" $?
 
