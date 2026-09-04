@@ -48,6 +48,9 @@ def regenerate():
         # Portfolio-level book + risk controls (Part 7): capture then render.
         os.path.join(ROOT, "scripts", "analysis", "capture_portfolio.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_portfolio.py"),
+        # Kalman-filtered time-varying hedge (Part 8): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "compare_kalman.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_kalman.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -201,6 +204,27 @@ def render_html_preview():
             with open(pt) as f:
                 rws = list(_csv.reader(f))
             html.append("<h2>Multi-basket portfolio summary (Part 7)</h2><table><tr>")
+            for h in rws[0]:
+                html.append(f"<th>{h}</th>")
+            html.append("</tr>")
+            for r in rws[1:]:
+                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
+            html.append("</table>")
+        except Exception:
+            pass
+
+    # Embed Part 8 Kalman figures (Nonlinear/Adaptive section).
+    for png in ("kalman_beta.png", "kalman_sharpe.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+    kt = os.path.join(ROOT, "results", "tables", "kalman_summary.csv")
+    if os.path.exists(kt):
+        try:
+            import csv as _csv
+            with open(kt) as f:
+                rws = list(_csv.reader(f))
+            html.append("<h2>Kalman vs rolling OLS (Part 8)</h2><table><tr>")
             for h in rws[0]:
                 html.append(f"<th>{h}</th>")
             html.append("</tr>")

@@ -59,6 +59,12 @@ echo "== Portfolio book + risk controls (Part 7) =="
 [ -f results/figures/portfolio_equity.png ]; chk "portfolio equity figure present" $?
 [ -f report/tables/portfolio.tex ]; chk "portfolio table present" $?
 
+echo "== Kalman time-varying hedge (Part 8) =="
+"$PY" scripts/test_kalman.py >/dev/null 2>&1; chk "kalman unit tests pass" $?
+[ -f results/tables/kalman_summary.csv ]; chk "kalman comparison summary present" $?
+[ -f results/figures/kalman_sharpe.png ]; chk "kalman Sharpe figure present" $?
+[ -f report/tables/kalman.tex ]; chk "kalman table present" $?
+
 echo "== Diagnostics (Part 6) =="
 "$PY" scripts/analysis/run_diagnostics.py >/dev/null 2>&1; chk "diagnostics driver runs" $?
 [ -f results/tables/diagnostics_summary.csv ]; chk "diagnostics summary present" $?

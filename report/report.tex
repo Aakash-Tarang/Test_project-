@@ -588,7 +588,99 @@ Figure \ref{fig:mc_stab}.
 \section{Nonlinear and Adaptive Extensions}
 \label{sec:nonlinear}
 Gradient-boosted trees / shallow network, RESET test, learning curves, honest
-bias--variance assessment; Kalman-filtered time-varying beta. \emph{[Parts 8, 9.]}
+bias--variance assessment (Part 9); Kalman-filtered time-varying beta (this section,
+Part 8).
+
+\subsection{Kalman-filtered time-varying hedge}
+\label{sec:kalman}
+So far the hedge $\beta$ has been estimated by a fixed-window rolling regression: every
+bar a new window is discarded and refit from scratch. That refit is noisy -- the
+coefficients jump each bar as one old observation leaves and one new one arrives -- and
+it discards useful information older than the window. A Kalman filter is the canonical
+\emph{recursive} alternative: model the hedge as a slowly drifting random walk and
+update it optimally as each bar arrives, so that \emph{all} past data is used through a
+running posterior and no window has to be dropped. We implement it as a Python
+reference (\texttt{scripts/model/kalman.py}) that plugs into the same causal,
+one-bar-delayed, cost-aware simulator as the rolling hedges, giving an apples-to-apples
+net-of-cost comparison.
+
+\paragraph{State-space model.} For target log price $y_t$ and basket log prices $x_t$,
+\begin{equation}
+  \beta_t = \beta_{t-1} + \eta_t,\quad \eta_t\sim\mathcal{N}(0,Q),\qquad
+  y_t = \bigl[1,\;x_t\bigr]^{\top}\beta_t + \eps_t,\quad \eps_t\sim\mathcal{N}(0,R),
+  \label{eq:kalman}
+\end{equation}
+where the state $\beta_t=(\alpha_t,\beta_{1,t},\dots,\beta_{k,t})$ holds the intercept
+and the $k$ hedge weights. The filter is the standard predict/update recursion of
+\eqref{eq:kalman}: the predictive state $\beta_{t\mid t-1}$ (which uses only information
+through $t-1$) yields the innovation $v_t=y_t-[1,x_t]\beta_{t\mid t-1}$ with variance
+$S_t=[1,x_t]P_{t\mid t-1}[1,x_t]^{\top}+R$; the signal is the standardized innovation
+$z_t=v_t/\sqrt{S_t}$, and only \emph{after} scoring bar $t$ is it fed back to update the
+posterior. This gives exactly the Part-4 no-lookahead timing: the hedge that scores bar
+$t$ never sees bar $t$ itself. $R$ is estimated from a 120-bar warm-up OLS fit and $Q$ is
+a single state-noise dial $Q_{ii}=q^{2}R$ over all states.
+
+\paragraph{Synthetic validation.} \texttt{scripts/test\_kalman.py} verifies the filter
+before any real-data claim: on a synthetic target whose true betas drift smoothly, the
+filtered $\hat\beta_t$ tracks the true time-varying betas with an RMSE of $0.73$ versus
+$3.37$ for a fixed full-sample OLS beta; the predictive beta at bar $t$ is verified to
+depend only on bars $<t$ (no lookahead); and the filtered residual rejects a unit root
+(ADF $p<10^{-3}$) with an OU half-life of $\approx$8 bars, i.e.\ the filtered spread is
+the same tradeable-stationary object Parts 4--7 rely on.
+
+\paragraph{Real-data comparison.} \autoref{tab:kalman_compare} and
+\autoref{fig:kalman_sharpe} compare the Kalman hedge (swept over the state-noise dial
+$q$) with the rolling OLS/Ridge hedges on the ADBE basket, all net of 10\,bps.
+\autoref{fig:kalman_beta} shows the filtered beta path against the rolling-OLS path.
+
+\input{tables/kalman.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/kalman_sharpe.png}
+\caption{Net-of-cost Sharpe (full sample and 2022+ test) for the Kalman state-noise
+sweep and the rolling OLS/Ridge hedges on the ADBE basket at 10\,bps.}
+\label{fig:kalman_sharpe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/kalman_beta.png}
+\caption{Kalman-filtered hedge weight on \texttt{CRM} over time versus the causal
+rolling-OLS-120 weight (Part 5).}
+\label{fig:kalman_beta}
+\end{figure}
+
+\textbf{Findings.} Three honest observations emerge.
+\begin{enumerate}[label=\textbf{K\arabic*.}]
+  \item \textbf{A smooth, low-turnover hedge is the adaptive win.} The best net-of-cost
+    Kalman operates at \emph{low} state noise ($q\lesssim10^{-4}$): it is a smoothly
+    updated (near-constant) hedge that trades only 61 round trips over the full sample
+    (vs 133--362 for the windowed hedges) and reaches a full-sample net Sharpe of
+    $\approx0.11$ -- the best of any hedge tested here, above rolling Ridge
+    ($\approx0.09$) and rolling OLS ($0.05$--$0.08$). Because the ADBE--basket
+    relationship is fairly stable over 2010--2026, the recursive smoother adds value by
+    \emph{not} churning the hedge each bar the way a refit window does, cutting the cost
+    drag that Parts 4--5 showed dominates.
+  \item \textbf{Adaptation is not monotone -- over-tracking destroys the spread.}
+    Raising $q$ so the filter follows the levels faster (which actually \emph{maximises}
+    the Gaussian fit likelihood on the training data) makes the residual white and
+    removes the persistent deviation that is the tradable mispricing: net Sharpe falls
+    to $-0.04$ at $q=10^{-2}$ and is most negative on the test period. This is the
+    state-space echo of Part 6's finding that the \emph{causal rolling} spread, not a
+    fast-tracking fit, is the stationary tradeable object.
+  \item \textbf{Robustness on 2022+ is a real advantage but not universal.} The
+    low-drift Kalman stays net-positive out-of-sample on 2022+ ($\approx0.09$--$0.11$),
+    in contrast to the default-window OLS/Ridge hedges which are net-negative there
+    (only the very-short rolling-OLS-60, which also adapts fast, is net-positive at
+    $0.52$). The single-dial design is nevertheless fragile: choosing $q$ on the
+    2019--2021 validation window by net Sharpe selects $q=10^{-3}$, which performs
+    poorly out-of-sample -- a transparent sign that the appropriate amount of
+    adaptation is itself regime-dependent and should be shrunk toward the smooth limit
+    given the small daily edge and cost drag established throughout this report.
+\end{enumerate}
+\emph{C++ port note.} The Kalman recursion is kept as a dependency-free Python
+reference in the research layer; porting it to the C++ engine (a $O(d^{3})$ update with
+$d\le5$) is straightforward and deferred, as the per-bar cost is negligible relative to
+the data I/O already handled there.
 
 % =============================================================================
 % 7. BACKTEST RESULTS
