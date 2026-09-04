@@ -30,7 +30,9 @@ def regenerate():
     """(Re)generate figures/tables from results/ using scripts/."""
     scripts = [
         os.path.join(ROOT, "scripts", "analysis", "make_data_summary.py"),
+        os.path.join(ROOT, "scripts", "analysis", "make_statkit_validation.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_report_data.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_method_validation.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -151,6 +153,21 @@ def render_html_preview():
             fp = os.path.join(ROOT, "results", "figures", png)
             if os.path.exists(fp):
                 html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+
+    # Embed Part 2 synthetic-validation table (Methodology / appendix).
+    vt = os.path.join(ROOT, "results", "tables", "statkit_validation.csv")
+    if os.path.exists(vt):
+        html.append("<h2>Statistical toolkit — synthetic validation (Methodology appendix)</h2>")
+        try:
+            import csv
+            with open(vt) as f:
+                rows = list(csv.reader(f))[1:]
+            html.append("<table><tr><th>Check</th><th>Value</th></tr>")
+            for r in rows:
+                html.append(f"<tr><td>{r[0]}</td><td>{r[1]}</td></tr>")
+            html.append("</table>")
+        except Exception:
+            pass
 
     html.append("<hr><p class='meta'>Build time: " + __import__("datetime").datetime.now().isoformat() + "</p>")
     html.append("</body></html>")

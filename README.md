@@ -5,8 +5,10 @@ Basket statistical arbitrage via regularized regression, nonlinear extensions, a
 **This repository is built incrementally across sessions.** Each session completes one Part of [`PLAN.md`](PLAN.md), commits it, and writes a [`HANDOFF.md`](HANDOFF.md) briefing the next session. This top-level README is completed in the final Part (reproducibility manual); until then it is intentionally brief.
 
 ## Current status
-- **Part 0 (this session):** master plan, environment reconnaissance, project scaffolding, report skeleton, handoff. See [`HANDOFF.md`](HANDOFF.md).
-- **Next:** **Part 1 — Data Acquisition & Universe Construction.**
+- **Part 0 (done):** master plan, environment reconnaissance, scaffolding, report skeleton.
+- **Part 1 (done):** real data pipeline + universe construction (primary: Yahoo Finance 195-name, 2010–2026, total-return panel; secondary: NYSE/Kaggle 501-name). Report §Data filled.
+- **Part 2 (done):** `scripts/statkit/` statistical foundation toolkit (ADF/KPSS, Engle–Granger/Johansen, DW/Ljung–Box, Breusch–Pagan/White, HAC, OU fit + half-life, Diebold–Mariano, Bonferroni/White-Reality-Check/Hansen-SPA, stationary bootstrap) with 29 passing synthetic unit tests; report §Methodology derivations + appendix validation filled. See [`HANDOFF.md`](HANDOFF.md).
+- **Next:** **Part 3 — C++ Engine Skeleton + Latency Instrumentation.**
 
 ## Quickstart
 ```bash

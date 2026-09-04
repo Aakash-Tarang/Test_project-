@@ -93,16 +93,18 @@ def main():
     ap.add_argument("--source", choices=["nyse", "yfinance", "auto"], default="auto")
     args = ap.parse_args()
 
-    sources = {"nyse": load_nyse, "yfinance": load_yfinance}
+    loaders = {"nyse": load_nyse, "yfinance": load_yfinance}
     if args.source != "auto":
-        df, sym = sources[args.source]()
+        src_used = args.source
+        df, sym = loaders[src_used]()
     else:
-        df, sym = load_yfinance() if os.path.isdir(os.path.join(RAW, "yfinance")) and glob.glob(os.path.join(RAW, "yfinance", "*.csv")) else (None, None)
-        src_used = "yfinance" if df is not None else None
-        if df is None:
-            df, sym = load_nyse(); src_used = "nyse"
+        has_yf = os.path.isdir(os.path.join(RAW, "yfinance")) and glob.glob(os.path.join(RAW, "yfinance", "*.csv"))
+        if has_yf:
+            src_used = "yfinance"; df, sym = load_yfinance()
+        else:
+            src_used = "nyse"; df, sym = load_nyse()
     if df is None:
-        sys.exit("No raw data found under data/raw/{nyse,yfinance}. Run download.py first.")
+        sys.exit(f"No raw data found for source '{src_used}'. Run download.py first.")
 
     df["open"] = pd.to_numeric(df["open"], errors="coerce")
     df["high"] = pd.to_numeric(df["high"], errors="coerce")
@@ -139,8 +141,7 @@ def main():
         "date_max": df["date"].max(),
         "columns": list(LONG_COLS),
         "note": ("adj_close from Yahoo (split+dividend adjusted) " if src_used == "yfinance"
-                 else "adj_close = split-adjusted price (no dividend adjustment; price returns only)"),
-    }
+                 else "adj_close = split-adjusted price (no dividend adjustment; price returns only)"),    }
     with open(os.path.join(PROC, "_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
     print(json.dumps(meta, indent=2))

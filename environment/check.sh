@@ -37,6 +37,9 @@ else
   echo "  [SKIP] no report/build_report.py yet"
 fi
 
+echo "== statkit (Part 2) =="
+"$PY" scripts/run_statkit_tests.py >/dev/null 2>&1; chk "statkit unit tests pass" $?
+
 echo "== Data pipeline (Part 1) =="
 if [ -f data/processed/universe.csv ]; then
   chk "cleaned universe present" 0

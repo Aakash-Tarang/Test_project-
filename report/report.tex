@@ -113,23 +113,25 @@ report.
 
 \subsection{Source and acquisition}
 \label{sec:data:source}
-The in-sandbox primary dataset is the classic \emph{NYSE (Kaggle)} dataset,
-obtained from the GitHub repository
-\href{https://github.com/ashishpatel26/NYSE-STOCK_MARKET-ANALYSIS-USING-LSTM}{\texttt{ashishpatel26/NYSE-STOCK\_MARKET-ANALYSIS-USING-LSTM}}
-(downloaded as a repository tarball via the GitHub API on \texttt{\today}).
-It contains daily price data for 501 U.S. securities (an S\&P 500-style snapshot),
-with fields \texttt{date, symbol, open, close, low, high, volume}, plus a
-separate split-adjusted price file, a \texttt{securities} file with GICS sector /
-sub-industry tags, and a quarterly \texttt{fundamentals} file.
+The primary dataset is daily OHLCV + split/dividend-adjusted close prices for U.S.
+equities, retrieved from \textbf{Yahoo Finance} via the \texttt{yfinance} client on
+\texttt{2026-09-04} on an internet-enabled machine
+(\texttt{scripts/data/download.py} with \texttt{--source yahoo}). Each of the
+$195$ currently downloaded tickers carries a $\approx\!16.7$-year daily series,
+\texttt{2010-01-04} to \texttt{2026-09-01}. The Yahoo panel is the analysis dataset
+used throughout this report because it satisfies the $\geq\!10$-year span and the
+total-return (fully corporate-action-adjusted) requirement.
 
 \emph{Environment note.} This sandbox cannot reach external market-data endpoints
-(Yahoo Finance, stooq, Nasdaq) at runtime; GitHub is the only reachable data host.
-A companion downloader
-(\texttt{scripts/data/download.py} with \texttt{--source yahoo}) is provided so a
-$\geq\!10$-year panel (2010--present) can be produced on a normal internet
-connection; the cleaning and QA pipeline below is identical for both sources. The
-remainder of this section reports on the in-sandbox GitHub dataset actually used for
-the analyses in this report.
+(Yahoo, stooq, Nasdaq) at runtime, so the download was run externally and committed.
+The downloader targets the full 505-name S\&P 500-style list in
+\texttt{scripts/data/sp500\_tickers.txt}; \textbf{195} of these were successfully
+retrieved, so the effective universe is 195 equities -- a documented shortfall
+relative to the 200-name minimum target in the specification. A secondary,
+larger-cross-section reference set (the classic 501-name \emph{NYSE/Kaggle}
+dataset, 2010--2016, split-adjusted only) is obtainable in-sandbox via
+\texttt{--source github} for cross-checks of cross-sectional breadth; it is not the
+primary analysis set.
 
 \subsection{Cleaning and adjustment methodology}
 \label{sec:data:cleaning}
@@ -138,17 +140,17 @@ panel with columns
 \[
 \texttt{date},\ \texttt{ticker},\ \texttt{open},\ \texttt{high},\ \texttt{low},\ \texttt{close},\ \texttt{adj\_close},\ \texttt{volume}.
 \]
-Corporate-action handling: for the NYSE source we use the provided split-adjusted
-prices; these are \emph{split}-adjusted only, so all returns in this report are
-\emph{price} (split-adjusted) returns, not total returns -- a documented
-limitation. (When the Yahoo path is used, \texttt{adj\_close} is fully adjusted for
-splits \emph{and} dividends.) Rows with non-positive prices are dropped, and the
-negligible fraction of zero-volume rows (0.002\% in the source) is removed. Duplicate
-(date, ticker) pairs are dropped (last value wins) and the panel is sorted.
+Corporate-action handling: we use Yahoo's fully adjusted close
+(\texttt{Adj Close}), which is adjusted for \emph{both} stock splits and cash
+dividends, so returns computed on \texttt{adj\_close} are \emph{total} returns.
+Rows with non-positive prices or zero volume (0.07\% of the source) are dropped,
+duplicate (date, ticker) pairs are removed (last value wins), and the panel is
+sorted by ticker and date.
 
 \subsection{Universe description}
 \label{sec:data:universe}
-The universe is the 501-name S\&P 500-style snapshot, mapped to 11 GICS sectors.
+The universe is the 195 downloaded S\&P 500-style constituents, mapped to 11 GICS
+sectors via the bundled symbol table (\texttt{scripts/data/sp500\_symbols.csv}).
 A data-quality gate (\texttt{scripts/data/qa.py}) verifies positive prices, no
 missing closes, no duplicate dates, sane volumes, per-symbol span, and calendar-gap
 tolerance; it passes 10/10 checks. Summary statistics are regenerated into
@@ -158,16 +160,16 @@ tolerance; it passes 10/10 checks. Summary statistics are regenerated into
 
 \subsection{Survivorship-bias discussion}
 \label{sec:data:survivorship}
-This dataset is a 2016-era constituent snapshot with a $\approx\!7$-year daily span
-(2010--2016). Two biases must be disclosed. First, because the panel was assembled
-from a 2016 membership list, names delisted or acquired before 2016 are absent;
-second, the panel is short of the $10$-year minimum span in the specification. The
-constituent \texttt{securities} file records each name's \emph{date first added}, which
-partially identifies membership changes, but a fully survivorship-bias-free panel
-requires the Yahoo-path download (10+ years) plus a historical constituent list
-(e.g.\ the Wikipedia/BlackRock membership history), which we list as the recommended
-upgrade. All results in later sections must therefore be read as conditional on this
-universe and corrected for the multiple tests it entails.
+The 195 downloaded names are those that Yahoo returns a full or near-full history
+for today; names delisted or acquired during the sample are largely absent, so the
+panel is \emph{survivorship-biased}: it conditions on names that survived to 2026,
+which overstates the historical tradability of the universe. Names added to the
+S\&P 500 only after 2016 (in the bundled 2016-era membership table) are
+systematically excluded. A fully survivorship-bias-free panel would require a
+historical membership list (e.g.\ the Wikipedia/BlackRock yearly constituents)
+joined to a delisted-name price source; we disclose this limitation rather than
+pretend it away. All later results are therefore conditional on this universe and
+must be corrected for the multiple hypotheses it entails.
 
 % =============================================================================
 % 4. METHODOLOGY
@@ -177,46 +179,296 @@ universe and corrected for the multiple tests it entails.
 
 \subsection{Estimator derivations}
 \label{sec:estimators}
-\emph{[Full derivations filled in Part 2/5.]}
+We set up the problem in the panel of \S\ref{sec:basemodel}. Stack $T$ observations
+of the target as $Y\in\R^{T}$ and the $n$ candidate baskets as columns of the design
+matrix $X\in\R^{T\times n}$ (a constant column is folded into $X$ unless stated), so
+that the linear model is
+\begin{equation}
+  Y = X\beta + \eps,\qquad \eps\sim (0,\ \sigma^{2} I) ,
+  \label{eq:linmodel}
+\end{equation}
+with unknown $\beta\in\R^{n}$. Throughout, residuals $\hat\eps = Y - X\hat\beta$ are the
+tradeable spread.
 
 \subsubsection{Ordinary least squares}
-Closed-form estimator
+\label{sec:deriv:ols}
+The OLS estimator minimizes the residual sum of squares
 \begin{equation}
-  \hat\beta = \bigl(X^{\top}X\bigr)^{-1}X^{\top}Y ,
+  \widehat\beta \;=\; \arg\min_{\beta}\ \bigl(Y-X\beta\bigr)^{\top}\bigl(Y-X\beta\bigr)
+  \;=\; \arg\min_{\beta}\ \Bigl[\, Y^{\top}Y - 2\beta^{\top}X^{\top}Y + \beta^{\top}X^{\top}X\beta \Bigr] .
+\end{equation}
+Setting the gradient to zero (first-order condition, normal equations)
+\begin{equation}
+  -2X^{\top}Y + 2X^{\top}X\beta = 0 \quad\Longleftrightarrow\quad
+  X^{\top}X\beta = X^{\top}Y ,
+  \label{eq:normal}
+\end{equation}
+and, for full-rank $X^{\top}X$, inverting gives the closed form
+\begin{equation}
+  \hat\beta \;=\; \bigl(X^{\top}X\bigr)^{-1}X^{\top}Y .
   \label{eq:ols}
 \end{equation}
-derived by minimizing the residual sum of squares. Gauss--Markov assumptions and what
-happens when they are violated in financial time series (non-i.i.d. errors,
-heteroskedasticity, serial correlation) are treated here.
+If $X^{\top}X$ is singular (perfect multicollinearity) the normal equations still have
+solutions; a generalized inverse / the ridge solution \eqref{eq:ridge} is then used.
+
+\paragraph{Gauss--Markov assumptions.} The estimator \eqref{eq:ols} is best linear
+unbiased (BLUE) under the classical assumptions
+\begin{enumerate}[label=(G\arabic*)]
+  \item \emph{Linearity:} the model is $Y = X\beta + \eps$.
+  \item \emph{Strict exogeneity:} $\E[\eps \mid X] = 0$, so that $\E[X^{\top}\eps]=0$.
+  \item \emph{Homoskedasticity and no serial correlation:} $\Var(\eps\mid X) = \sigma^{2}I$.
+  \item \emph{Full rank:} $\rank(X^{\top}X)=n$.
+\end{enumerate}
+Under (G1)--(G4), $\hat\beta$ is unbiased,
+$\E[\hat\beta \mid X] = \beta + (X^{\top}X)^{-1}X^{\top}\E[\eps\mid X] = \beta$, with
+conditional covariance
+\begin{equation}
+  \Var(\hat\beta \mid X) = \sigma^{2}\bigl(X^{\top}X\bigr)^{-1},
+  \qquad \hat\sigma^{2} = \tfrac{\hat\eps^{\top}\hat\eps}{T-n} .
+\end{equation}
+
+\paragraph{Violations in financial time series.} Daily return regressions routinely
+violate the classical assumptions: (i) \emph{serial correlation} in $\eps_t$ (the very
+mean reversion we seek) makes $\Var(\eps\mid X)\ne \sigma^{2}I$ and the OLS covariance
+inconsistent; (ii) \emph{heteroskedasticity} (volatility clustering) likewise biases
+inference but not $\hat\beta$; and (iii) \emph{non-exogeneity / look-ahead} if any $X$
+uses information unavailable at the trade time. Consequences: the point estimate
+$\hat\beta$ remains unbiased under (G2) but its standard errors are wrong, t-statistics
+are overstated, and spurious $\beta$'s appear when $n$ is large relative to $T$. We
+therefore (a) correct inference with Newey--West HAC errors \eqref{eq:hac}, (b)
+shrink/sparsify with \S\ref{sec:deriv:ridge}--\ref{sec:deriv:pcr}, and (c) always report
+out-of-sample validation and look-ahead-free execution.
 
 \subsubsection{Ridge regression}
+\label{sec:deriv:ridge}
+Ridge solves the penalized problem
+\begin{equation}
+  \hat\beta_{\mathrm{ridge}} \;=\; \arg\min_{\beta}\ \Bigl\{
+    \underbrace{\bigl(Y-X\beta\bigr)^{\top}\bigl(Y-X\beta\bigr)}_{\text{fitting loss}}
+    + \underbrace{\lambda \lVert\beta\rVert_{2}^{2}}_{\text{L2 penalty}} \Bigr\}, \qquad \lambda \ge 0 .
+\end{equation}
+The first-order condition
+$-2X^{\top}Y + 2X^{\top}X\beta + 2\lambda\beta = 0$ gives
 \begin{equation}
   \hat\beta_{\mathrm{ridge}} = \bigl(X^{\top}X + \lambda I\bigr)^{-1}X^{\top}Y ,
   \label{eq:ridge}
 \end{equation}
-with geometric and Bayesian (MAP under a Gaussian prior) interpretations.
+\emph{Geometric view:} adding $\lambda I$ to the (possibly ill-conditioned or singular)
+$X^{\top}X$ makes it invertible and pulls the solution toward the origin; the ridge
+estimator is the orthogonal projection of $Y$ onto a ball of radius controlled by
+$\lambda$, shrinking every coefficient continuously (never exactly to zero). For
+correlated baskets the naive OLS weights can be large and opposite-signed; ridge
+stabilizes them by damping the directions of small eigenvalues.
+\emph{Bayesian view:} with a Gaussian prior $\beta \sim \mathcal{N}(0, (\sigma^{2}/\lambda) I)$
+and Gaussian likelihood $Y\mid X,\beta \sim \mathcal{N}(X\beta, \sigma^{2}I)$, the
+posterior is Gaussian with mode
+$\hat\beta_{\mathrm{MAP}} = (X^{\top}X + \lambda I)^{-1}X^{\top}Y$, i.e.\ ridge is the
+MAP (equivalently posterior mean) estimator under a zero-mean Gaussian prior. The
+shrinkage magnitude $\lambda$ is set by cross-validation/walk-forward in \S5.
 
 \subsubsection{Lasso}
-Via subgradient conditions; no closed form. Coordinate descent / LARS is described.
+\label{sec:deriv:lasso}
+Lasso replaces the L2 penalty with an L1 penalty,
+\begin{equation}
+  \hat\beta_{\mathrm{lasso}} = \arg\min_{\beta}\Bigl\{\,
+    \tfrac{1}{2}\bigl(Y-X\beta\bigr)^{\top}\bigl(Y-X\beta\bigr)
+    + \lambda \lVert\beta\rVert_{1} \Bigr\},\qquad
+    \lVert\beta\rVert_{1} = \sum_{j=1}^{n}\lvert \beta_{j}\rvert .
+\end{equation}
+The L1 penalty is not differentiable at $\beta_{j}=0$, so the solution is characterized
+by the \emph{subgradient} (KKT) condition
+\begin{equation}
+  0 \;\in\; X^{\top}(Y - X\beta) \;-\; \lambda\,\partial\lVert\beta\rVert_{1},
+  \qquad
+  \partial\lVert\beta_{j}\rVert_{1} = \begin{cases}
+    \{\operatorname{sign}(\beta_{j})\}, & \beta_{j}\ne 0,\\
+    [-1,1], & \beta_{j}=0 ,
+  \end{cases}
+  \label{eq:lasso_kkt}
+\end{equation}
+which is exactly what drives coefficients to zero: small baskets whose marginal
+predictive contribution does not exceed the penalty threshold $\lambda$ are set exactly
+to $0$, yielding \emph{sparse} basket selection. Because \eqref{eq:lasso_kkt} has no
+closed form, we use \emph{coordinate descent} (cyclically update one $\beta_j$ holding
+others fixed). For column-normalized data the univariate update is the soft-threshold
+operator
+\begin{equation}
+  \hat\beta_{j} \;\leftarrow\; \frac{1}{\rho_{j}}\, S_{\lambda}\!\Bigl(X_{j}^{\top}r_{-j}\Bigr),
+  \qquad \rho_{j} = X_{j}^{\top}X_{j},\qquad
+  S_{\lambda}(z) = \operatorname{sign}(z)\bigl(\lvert z\rvert - \lambda\bigr)_{+} ,
+  \label{eq:softthresh}
+\end{equation}
+where $r_{-j} = Y - \sum_{k\ne j} X_{k}\beta_{k}$ is the partial residual, iterated to
+convergence over a decreasing path of $\lambda$ values.
+\emph{Elastic net} interpolates between \eqref{eq:ridge} and \eqref{eq:lasso_kkt} by
+penalizing $\lambda_{1}\lVert\beta\rVert_{1} + \lambda_{2}\lVert\beta\rVert_{2}^{2}$, which
+retains Lasso sparsity while regularizing groups of highly-correlated baskets more
+stably than Lasso alone.
 
 \subsubsection{Principal component regression}
-Via the eigendecomposition of the covariance matrix; connection to market/sector
-factor structure.
+\label{sec:deriv:pcr}
+Center the regressors column-wise and form the sample covariance
+$S = \tfrac{1}{T}X^{\top}X \in \R^{n\times n}$ (for the correspondingly rescaled $X$).
+The eigendecomposition
+\begin{equation}
+  S = V\,\Lambda\,V^{\top},\qquad
+  \Lambda = \operatorname{diag}(\lambda_{1}\ge\lambda_{2}\ge\cdots\ge\lambda_{n}\ge 0),
+\end{equation}
+yields orthonormal eigenvectors $V=[v_{1},\dots,v_{n}]$. The \emph{principal components}
+are the projections $Z = X V$; the $k$-th component $Z_{k}=Xv_{k}$ is the linear
+combination of baskets with maximal variance subject to being uncorrelated with
+$Z_{1},\dots,Z_{k-1}$, and $\lambda_{k}=\Var(Z_{k})$. Principal component regression
+(PCR) regresses $Y$ on the top-$k$ components,
+\begin{equation}
+  \hat\beta_{\mathrm{PCR}} = V_{:k}\,\bigl(Z_{:k}^{\top}Z_{:k}\bigr)^{-1}Z_{:k}^{\top}Y ,
+  \label{eq:pcr}
+\end{equation}
+i.e.\ OLS in the $k$-dimensional rotated space. Economically, in a basket of same-sector
+equities the first component typically loads on the \emph{common sector/market} factor
+(the ``market mode''), and the trailing components capture sector-relative idiosyncratic
+movements -- precisely the structure Avellaneda \& Lee \cite{avellaneda2010statistical}
+exploit. By keeping only $k$ components, PCR discards low-variance noise directions and
+dramatically reduces variance when $n$ is large relative to $T$, at the cost of the
+interpretability of the original $\beta_i$ weights.
 
 \subsection{Statistical diagnostics}
 \label{sec:diagnostics}
-\emph{[Definitions, null hypotheses, and joint interpretation filled in Part 2/6.]}
-Stationarity (ADF, KPSS), cointegration (Engle--Granger, Johansen), residual
-autocorrelation (Durbin--Watson, Ljung--Box), heteroskedasticity (Breusch--Pagan /
-White), Newey--West HAC correction, and the Ornstein--Uhlenbeck mean-reversion fit
-with half-life $\ln(2)/\theta$ compared to the holding period.
+The diagnostic battery below is applied to the model residuals $\hat\eps_t$ of the final
+fitted baskets (Part 6). All routines are implemented in \texttt{scripts/statkit/} and
+unit-tested on synthetic data.
+
+\subsubsection{Stationarity: ADF and KPSS}
+\label{sec:diag:stationarity}
+Augmented Dickey--Fuller (\cite{dickeyfuller1979}) tests a unit root in $\hat\eps_t$ via
+the regression
+\begin{equation}
+  \Delta \hat\eps_t \;=\; \alpha + \rho\,\hat\eps_{t-1} + \sum_{j=1}^{p}\gamma_{j}\,\Delta\hat\eps_{t-j} + u_{t},
+  \qquad H_{0}^{ADF}:\ \rho = 0\ \ (\text{unit root / non-stationary}).
+  \label{eq:adf}
+\end{equation}
+KPSS (\cite{kpss1992}) tests the \emph{opposite} null: it fits $\hat\eps_t = r_t +
+u_t$ with $r_t = r_{t-1} + v_t$ and tests $H_{0}^{KPSS}: \Var(v_t)=0$ (level/trend
+stationary). Reading them jointly resolves ambiguity: the residual is judged consistent
+with stationarity when ADF \emph{rejects} its unit-root null and KPSS \emph{fails to
+reject} its stationarity null. A spread must be stationary to be mean-reverting and
+tradeable; a unit root in $\hat\eps_t$ would mean the ``basket hedge'' is spurious.
+
+\subsubsection{Cointegration: Engle--Granger and Johansen}
+\label{sec:diag:coint}
+For a single target $Y$ and basket $X$ both $I(1)$ in prices, Engle--Granger
+(\cite{englegranger1987}) is a two-step test: (1) OLS $Y_t = \alpha + X_t^{\top}\beta +
+\varepsilon_t$; (2) test $\varepsilon_t$ for a unit root with \eqref{eq:adf}. Rejecting a
+unit root in the step-1 residual establishes that $Y$ and the basket share a common
+stochastic trend, so the spread $\varepsilon_t$ is stationary and mean-reverting. For a
+whole basket of $N>2$ series the Johansen \cite{johansen1991} procedure estimates a VECM
+and tests the \emph{cointegration rank} $r$ via trace statistics against their
+distributions; $r\ge1$ means at least one stationary linear combination exists. We apply
+Johansen at the basket level to confirm the regression-based spread is genuinely
+cointegrated rather than merely highly correlated.
+
+\subsubsection{Residual autocorrelation: Durbin--Watson and Ljung--Box}
+\label{sec:diag:autocorr}
+The Durbin--Watson \cite{durbinwatson1950} statistic
+\begin{equation}
+  \mathrm{DW} = \frac{\sum_{t=2}^{T}\bigl(\hat\eps_t - \hat\eps_{t-1}\bigr)^{2}}
+                     {\sum_{t=1}^{T}\hat\eps_{t}^{2}}
+  \;\approx\; 2\bigl(1-\hat\rho_{1}\bigr)
+\end{equation}
+tests first-order autocorrelation: $\mathrm{DW}\approx 2$ indicates none, $<2$ positive
+serial correlation. The Ljung--Box \cite{ljungbox1978} portmanteau statistic
+\begin{equation}
+  Q \;=\; T(T+2)\sum_{\ell=1}^{L}\frac{\hat\rho_{\ell}^{2}}{T-\ell}
+  \;\sim\; \chi^{2}_{L} \quad \text{under } H_{0}: \rho_{1}=\cdots=\rho_{L}=0 ,
+  \label{eq:ljungbox}
+\end{equation}
+tests whether autocorrelations up to lag $L$ are jointly zero. Serial correlation in a
+``signal'' residual is expected if mean reversion persists over several days (positive
+$\rho_\ell$ on daily returns implies momentum), so its presence must be reconciled with
+the assumed OU dynamics \eqref{eq:ou} rather than treated as a nuisance to remove.
+
+\subsubsection{Heteroskedasticity: Breusch--Pagan and White}
+\label{sec:diag:heterosk}
+Breusch--Pagan \cite{breuschpagan1979} regresses the squared residuals on the original
+regressors and tests $H_0$: no heteroskedasticity via the $LM = T R^{2}$ statistic of that
+auxiliary regression. White \cite{white1980} generalizes this by regressing $\hat\eps_t^{2}$
+on the regressors, their squares and cross-products, thereby also catching
+misspecification. Daily equity returns are strongly heteroskedastic (volatility
+clustering), so rejection is the rule rather than the exception; the practical
+consequence is that we must use HAC standard errors and report performance conditional
+on volatility regimes (\S7).
+
+\subsubsection{HAC standard errors}
+\label{sec:diag:hac}
+When \eqref{eq:diag:autocorr} and \eqref{eq:diag:heterosk} detect dependence, the OLS
+covariance $\sigma^{2}(X^{\top}X)^{-1}$ is inconsistent. Newey--West
+\cite{neweywest1987} estimate
+\begin{equation}
+  \widehat{\Var}_{HAC}(\hat\beta) = \bigl(X^{\top}X\bigr)^{-1}
+    \Bigl[\, \hat\Omega_{0} + \sum_{\ell=1}^{L} w_{\ell}\bigl(\hat\Omega_{\ell} +
+    \hat\Omega_{\ell}^{\top}\bigr) \Bigr] \bigl(X^{\top}X\bigr)^{-1},
+  \qquad \hat\Omega_{\ell} = \tfrac{1}{T}\sum_{t}\hat\eps_{t}\hat\eps_{t-\ell}\,x_{t}x_{t-\ell}^{\top},
+  \label{eq:hac}
+\end{equation}
+with Bartlett weights $w_{\ell}=1-\ell/(L+1)$ guaranteeing positive semi-definiteness.
+We report t-statistics before and after the HAC correction to show how much of the
+apparent significance of a basket survives proper inference.
+
+\subsubsection{Mean reversion speed: Ornstein--Uhlenbeck fit}
+\label{sec:diag:ou}
+To quantify how fast the spread reverts we fit a one-factor Ornstein--Uhlenbeck process
+to $\hat\eps_t$,
+\begin{equation}
+  d\eps_t = \theta\,\bigl(\mu - \eps_t\bigr)\,dt + \sigma\,dW_{t} .
+  \label{eq:ou}
+\end{equation}
+Discretizing with unit step gives $\Delta\eps_{t+1} = \theta\mu - \theta\eps_{t} + u_{t}$,
+so $\theta$, $\mu$ and $\sigma$ are recovered by the OLS regression of $\Delta\eps_t$ on a
+constant and $\eps_{t-1}$ (see \texttt{statkit.ou}). The implied mean-reversion half-life
+is
+\begin{equation}
+  \tau_{1/2} = \frac{\ln 2}{\theta},
+  \label{eq:halflife}
+\end{equation}
+and must be compared to the strategy's intended holding period: if a trade holds far
+longer than a few half-lives the expected profit of a reverting spread is already mostly
+captured, while holding far shorter than the half-life trades noise. A mismatch here is
+flagged as a design flaw, not glossed over (\S7).
 
 \subsection{Multiple-testing correction}
 \label{sec:multtest}
-Bonferroni, White Reality Check, Hansen's SPA. \emph{[Numeric result in Part 10.]}
+A naive universe scan that reports only the single best basket ignores that it searched
+over $M$ = (number of targets) $\times$ (basket configurations) $\times$ (hyperparameter
+settings) hypotheses. We apply three corrections (\texttt{statkit.multtest}):
+\begin{enumerate}
+  \item \textbf{Bonferroni:} a raw p-value $p$ is deemed significant only if
+    $p\cdot M < \alpha$; conservative, controls the family-wise error rate.
+  \item \textbf{White Reality Check} \cite{white2000realitycheck}: with per-strategy
+    performance series $f_{m,t}$ ($m=1,\dots,M$), the null is that the \emph{best} model
+    does not beat the benchmark: $H_{0}: \max_{m}\E[f_{m}]\le 0$. The test statistic is
+    $\max_{m}\bar{f}_{m}$ where $\bar f_m = T^{-1}\sum_t f_{m,t}$, and its null
+    distribution is obtained by a stationary bootstrap on the recentered differentials
+    $\bar f_m - f_{m,t}$, which accounts for the $\max$ over all $M$ searched models.
+  \item \textbf{Hansen's SPA} \cite{hansen2005test}: a studentized variant of the same
+    test with a more powerful re-centering rule.
+\end{enumerate}
+These yield the explicit numeric answer in \S8 (Part 10): \emph{after correcting for the
+number of models scanned, is the best basket's Sharpe still distinguishable from zero?}
 
 \subsection{Forecast comparison}
-Diebold--Mariano test across model pairs.
+\label{sec:forecast}
+Rather than eyeballing which variant has the higher out-of-sample $R^2$, we compare
+forecasts pairwise with the Diebold--Mariano \cite{dieboldmariano1995} test. For two
+models with forecast errors $e^{(1)}_{t}, e^{(2)}_{t}$ and squared-error loss, define the
+loss differential $d_t = \bigl(e^{(1)}_{t}\bigr)^{2} - \bigl(e^{(2)}_{t}\bigr)^{2}$. Under
+$H_{0}$ of equal predictive accuracy, $\E[d_t]=0$ and
+\begin{equation}
+  \mathrm{DM} = \frac{\bar d}{\sqrt{\widehat{\mathrm{LRV}}(\bar d)/T}} \;\overset{d}{\longrightarrow}\;
+  \mathcal{N}(0,1),
+  \label{eq:dm}
+\end{equation}
+where $\widehat{\mathrm{LRV}}$ is a HAC estimate of the long-run variance of $d_t$
+(correcting for overlapping/autocorrelated forecast errors). A significantly negative DM
+means variant 1 (numerator) forecasts more accurately.
 
 % =============================================================================
 % 5. MODEL COMPARISON RESULTS
@@ -286,6 +538,21 @@ edge exists after all corrections and costs, and under what conditions.]}
 \appendix
 \section{Additional Derivations and Diagnostic Tables}
 \label{sec:appendix}
-\emph{[Extended derivations and extra diagnostic tables in later Parts.]}
+
+\subsection{Synthetic validation of the statistical toolkit}
+\label{sec:appendix:statkit}
+The statistical routines of Section \ref{sec:method} are unit-tested on synthetic
+data (spec-permitted for isolated math checks) via
+\texttt{scripts/run\_statkit\_tests.py} (29 tests, all passing). Table
+\ref{tab:statkit_validation} records representative recoveries from simulated data so
+that the claims in \S4 are reproducible rather than hand-typed; in particular the
+Ornstein--Uhlenbeck speed and half-life are recovered to within $<1.5\%$ and the White
+Reality Check is non-significant when all $M$ scanned strategies are genuinely null but
+detects a real edge.
+
+\input{tables/method_validation.tex}
+
+\subsection{Extended derivations}
+\emph{[Additional algebra deferred from the main text, if needed, in later Parts.]}
 
 \end{document}

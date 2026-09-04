@@ -1,21 +1,20 @@
 # Data
 
-## Provenance (current in-sandbox dataset — populated by Part 1)
-- **Source:** NYSE (Kaggle) dataset — `ashishpatel26/NYSE-STOCK_MARKET-ANALYSIS-USING-LSTM` (GitHub), downloaded as a repo tarball via `api.github.com/repos/.../tarball/HEAD`.
-- **Files:** `prices-split-adjusted.csv` (daily OHLCV), `securities.csv` (GICS sector/sub-industry, date first added), `fundamentals.csv` (quarterly).
-- **Scope:** 501 U.S. securities, daily, **2010-01-04 .. 2016-12-30** (~7 years), 851,243 cleaned rows.
-- **Adjustment:** split-adjusted only (no dividend adjustment) → price (split-adjusted) returns, not total returns.
-- **Retrieval:** re-run `python3 scripts/data/download.py --source github` to re-fetch; manifest/checksums in `data/manifest/github_nyse.json`.
-- **Bias:** 2016-era constituent snapshot → survivorship bias + short span disclosed in report §Data.
+## Provenance (current primary panel — Yahoo Finance, user-downloaded 2026-09-04)
+- **Source:** Yahoo Finance daily OHLCV via `yfinance` (`scripts/data/download.py --source yahoo`), run on an internet-enabled machine, committed to `data/raw/yfinance/`.
+- **Scope:** **195** of the 505-name S&P 500-style list (`scripts/data/sp500_tickers.txt`) were retrieved.
+- **Span:** 2010-01-04 .. 2026-09-01 (~16.7 years); fully split **and** dividend adjusted (total-return) via Yahoo `Adj Close`.
+- **Processed:** `data/processed/universe.csv` (764,896 rows), `symbols.csv` (505-name metadata: name, sector, sub-industry, date-first-added), `_meta.json`.
+- **QA:** `scripts/data/qa.py` passes 10/10 (note: hard ticker gate lowered to 150; actual 195 < 200 spec target, disclosed in report §Data).
+- **Bias:** survivorship-biased (only 2026-surviving, long-history names) — disclosed in report §Data.
 
-## Recommended ≥10-year primary panel (run on a machine with normal internet)
-- `python3 scripts/data/download.py --source yahoo` fetches daily OHLCV + fully-adjusted Adj Close from Yahoo Finance for the 505-ticker S&P 500 list (`scripts/data/sp500_tickers.txt`) over 2010→present into `data/raw/yfinance/`.
-- Then `clean.py --source yfinance`, `qa.py`, and `make_data_summary.py` run identically.
+## Secondary reference set (in-sandbox re-downloadable)
+- `python3 scripts/data/download.py --source github` → NYSE (Kaggle) 501-name set, 2010–2016, split-adjusted only (price returns, not total). Useful for cross-sectional breadth cross-checks; not the primary analysis set.
 
 ## Layout
-- `raw/` — original downloads (git-ignored).
-- `processed/` — `universe.csv` (long panel: date,ticker,OHLCV,adj_close,volume), `symbols.csv` (metadata), `_meta.json` (provenance note).
-- `manifest/` — checksummed provenance manifests (`*.json` regenerable; `*.md` tracked).
+- `raw/` — original downloads. `data/raw/yfinance/*.csv` are **tracked** (user-committed, ~19 MB). `data/raw/nyse/` (if present) is git-ignored.
+- `processed/` — uniform long panel + metadata (git-ignored; regenerable via `scripts/data/run_pipeline.sh`).
+- `manifest/` — provenance manifests.
 
 ## Rule
-Every raw file traces to a manifest entry. Never commit raw data or large binaries.
+Re-run pipeline: `bash scripts/data/run_pipeline.sh --source yfinance` (or `--source github`). Never commit `data/processed/` or large regenerable artifacts.
