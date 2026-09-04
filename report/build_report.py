@@ -54,6 +54,9 @@ def regenerate():
         # Nonlinear signal extraction + RESET (Part 9): capture then render.
         os.path.join(ROOT, "scripts", "analysis", "compare_nonlinear.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_nonlinear.py"),
+        # Multiple-testing correction + Diebold-Mariano (Part 10): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "compare_multtest.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_multtest.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -228,6 +231,27 @@ def render_html_preview():
             with open(kt) as f:
                 rws = list(_csv.reader(f))
             html.append("<h2>Kalman vs rolling OLS (Part 8)</h2><table><tr>")
+            for h in rws[0]:
+                html.append(f"<th>{h}</th>")
+            html.append("</tr>")
+            for r in rws[1:]:
+                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
+            html.append("</table>")
+        except Exception:
+            pass
+
+    # Embed Part 10 multiple-testing figures (Robustness section).
+    for png in ("multtest_sharpe.png", "multtest_pvalues.png", "multtest_forest.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+    mt = os.path.join(ROOT, "results", "tables", "multtest_corrections.csv")
+    if os.path.exists(mt):
+        try:
+            import csv as _csv
+            with open(mt) as f:
+                rws = list(_csv.reader(f))
+            html.append("<h2>Multiple-testing corrections (Part 10)</h2><table><tr>")
             for h in rws[0]:
                 html.append(f"<th>{h}</th>")
             html.append("</tr>")

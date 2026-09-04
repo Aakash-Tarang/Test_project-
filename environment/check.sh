@@ -89,6 +89,33 @@ if linear_full and base_full and float(linear_full[0][2])>float(base_full[0][2])
     sys.exit(1)  # nonlinear gate must NOT beat baseline net of costs (honest gate)
 " >/dev/null 2>&1; chk "nonlinear-gate does not outclaim baseline net Sharpe" $?
 
+echo "== Multiple-testing + Diebold-Mariano (Part 10) =="
+[ -f results/tables/multtest_audit.csv ]; chk "multtest audit table present" $?
+[ -f results/tables/multtest_corrections.csv ]; chk "multtest corrections table present" $?
+[ -f results/tables/multtest_dm.csv ]; chk "multtest DM table present" $?
+[ -f results/figures/multtest_sharpe.png ]; chk "multtest Sharpe figure present" $?
+[ -f results/figures/multtest_forest.png ]; chk "multtest DM forest figure present" $?
+[ -f report/tables/multtest.tex ]; chk "multtest table present" $?
+"$PY" -c "
+import sys,os,csv
+p=os.path.join('results','tables','multtest_corrections.csv')
+d={r[0]:r[1] for r in list(csv.reader(open(p)))[1:] if len(r)>=2}
+# honest gate: no headline net Sharpe may survive a fair correction
+if int(d.get('n_survive_bonferroni',-1))!=0: sys.exit(1)
+if float(d.get('white_rc_p',0.0))<0.05: sys.exit(1)
+if float(d.get('hansen_spa_p',0.0))<0.05: sys.exit(1)
+" >/dev/null 2>&1; chk "no strategy survives fair data-snooping correction (honest gate)" $?
+"$PY" -c "
+import sys,os
+sys.path.insert(0,os.path.join(os.getcwd(),'scripts','statkit'))
+from forecast import dm_return_pair
+import numpy as np
+rng=np.random.default_rng(0); n=800
+a=rng.standard_normal(n); b=rng.standard_normal(n)
+r=dm_return_pair(a,b)
+if not (r['pvalue']>0.05): sys.exit(1)
+" >/dev/null 2>&1; chk "statkit DM return-pair unit test (equal series not rejected)" $?
+
 echo "== statkit (Part 2) =="
 "$PY" scripts/run_statkit_tests.py >/dev/null 2>&1; chk "statkit unit tests pass" $?
 

@@ -12,7 +12,7 @@ means forecast 1 is better (smaller mean loss).
 """
 import numpy as np
 
-__all__ = ["diebold_mariano"]
+__all__ = ["diebold_mariano", "dm_return_pair"]
 
 
 def _loss(e, loss):
@@ -63,3 +63,50 @@ def diebold_mariano(e1, e2, h=1, loss="square"):
     return {"dm_statistic": float(dm), "pvalue": float(p),
             "mean_loss_diff": float(mean_d), "n_obs": int(n),
             "note": "Negative DM => model 1 (e1) has lower loss (better forecast)."}
+
+
+def dm_return_pair(r1, r2, maxlags=None, two_sided=True):
+    """Diebold--Mariano-style test on a pair of *return* (P&L) series.
+
+    The forecast-error form of DM (\`diebold_mariano\`) squares the loss, which is the
+    right object for forecast-accuracy comparison but not for comparing two trading
+    strategies, where higher mean P&L is better. Here we take the return differential
+
+        d_t = r1_t - r2_t
+
+    and test H0: E[d] = 0 (equal mean P&L) against the alternative that one strategy
+    dominates, dividing the sample mean of d by a Newey--West HAC standard error of the
+    mean (correlated daily P&L from multi-day holds invalidates an i.i.d. standard
+    error). Positive dm => strategy 1 has higher mean daily P&L.
+
+    r1, r2 : equal-length arrays of daily net returns.
+    maxlags: HAC truncation lag (default: Newey-West rule of thumb).
+    Returns dict: dm_statistic, pvalue (two-sided unless two_sided=False), mean_diff,
+    hac_se, n_obs.
+    """
+    import statsmodels.api as sm
+    r1 = np.asarray(r1, dtype=float).ravel()
+    r2 = np.asarray(r2, dtype=float).ravel()
+    n = len(r1)
+    if len(r2) != n or n < 2:
+        raise ValueError("r1 and r2 must be equal length, length>=2")
+    d = r1 - r2
+    if maxlags is None:
+        maxlags = int(np.floor(4 * (n / 100.0) ** (2.0 / 9.0)))
+    # HAC regression of the differential on a lone intercept (no extra constant):
+    # beta is the HAC sample mean, bse is its Newey-West standard error.
+    X = np.ones((n, 1))
+    fit = sm.OLS(d, X).fit(cov_type="HAC", cov_kwds={"maxlags": maxlags})
+    mean_diff = float(fit.params[0])
+    se = float(fit.bse[0])
+    dm = mean_diff / se if se > 0 else float("nan")
+    from scipy import stats as _st
+    if np.isnan(dm):
+        pvalue = float("nan")
+    else:
+        pvalue = 2.0 * (1.0 - _st.norm.cdf(abs(dm))) if two_sided \
+            else (1.0 - _st.norm.cdf(dm))
+    return {"dm_statistic": float(dm), "pvalue": float(pvalue),
+            "mean_diff": mean_diff, "hac_se": float(se),
+            "n_obs": int(n), "maxlags": int(maxlags),
+            "note": "Positive DM => strategy 1 (r1) has higher mean daily P&L."}

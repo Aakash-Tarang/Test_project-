@@ -978,10 +978,11 @@ Ridge penalty $\lambda$.}
 \section{Robustness and Statistical Validity}
 \label{sec:robustness}
 This section applies the diagnostic battery of \S\ref{sec:diagnostics} to the residuals
-of the final spread models (Part 6), then states a first multiple-testing bound over the
-models scanned so far. The formal data-snooping corrections (Bonferroni across the full
-universe, White Reality Check, Hansen's SPA) and the pairwise Diebold--Mariano table are
-completed in Part 10.
+of the final spread models (Part 6), then runs the formal data-snooping corrections
+(Bonferroni across the full scanned universe, White's Reality Check, Hansen's SPA) and
+the pairwise Diebold--Mariano comparison (Part 10). The honest conclusion of that audit
+--- no headline net Sharpe survives a fair multiple-testing correction --- is stated in
+\S\ref{sec:diag:multtest}.
 
 \subsection{Statistical diagnostics on the final residuals}
 \label{sec:diag:results}
@@ -1067,18 +1068,97 @@ line) that the strategy actually holds for $\sim$17 bars.}
 \label{fig:diag_halflife}
 \end{figure}
 
-\subsection{A first multiple-testing statement}
+\subsection{A data-snooping correction of the headline Sharpe}
 \label{sec:diag:multtest}
-The Part 5 comparison scanned $M=13$ walk-forward candidate strategies (OLS, three
-Ridge, three Lasso, three ElasticNet, three PCA hyper-parameter settings) on one
-basket at one cost level. Under a Bonferroni correction for $\alpha=0.05$ the marginal
-significance bar is $p<0.05/13\approx0.0038$. None of the full-sample net Sharpes
-($\le0.09$) individually approaches significance on their own $t$-distribution before
-even this modest correction is applied, so the honest preliminary verdict is that
-\textbf{the within-basket edge is real in sign (positive IC, stationary adaptive
-spread) but not statistically strong enough to survive a fair multiple-testing bar} --
-exactly the question Part 10 answers rigorously across the whole universe with the
-White Reality Check and Hansen's SPA.
+Every headline number in this report was the \emph{best} of a scan: four baskets,
+hedge windows $60/120/180$, penalised estimators, a Kalman state-noise dial, and
+Parts 8--9's signal variants. Reporting the best scan's Sharpe with an uncorrected
+$p$-value is invalid (White 2000; data snooping). This subsection answers the
+adversarial question rigorously: \textbf{is the best observed net Sharpe still
+distinguishable from zero once we count the search?} The answer, computed on net
+(10\,bps) daily P\&L over one common calendar (Nov 2010--Sep 2026) for
+\autoref{eq:kalman}-style and rolling hedges, is \emph{no}.
+
+\paragraph{Hypothesis count.} We define the data-snooping universe symmetrically as
+$M=44$ distinct (basket $\times$ hedge) strategies: the \emph{same} grid of eleven
+hedge models --- rolling OLS with windows 60/120/180, Ridge $w120$, Lasso $w120$,
+ElasticNet $w120$, PCA $w120$, and Kalman $q\in\{10^{-5},10^{-4},10^{-3},10^{-2}\}$
+--- run on each of the four baskets. This reproduces the breadth of hedge models
+whose full-sample net Sharpes Parts 4--8 reported, on a fair common window.
+\autoref{tab:multtest_audit} lists the best of them; \autoref{fig:multtest_sharpe}
+plots the top of the scan.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/multtest_sharpe.png}
+\caption{Best of the $M=44$ scanned (basket, hedge) strategies by full-sample net
+Sharpe (10\,bps). The empirical best, \texttt{GS} rolling OLS $w180$, reaches only a
+raw one-sided HAC $p$ of $0.059$.}
+\label{fig:multtest_sharpe}
+\end{figure}
+
+\paragraph{The corrections.} \autoref{tab:multtest_corrections} reports three
+layers of correction.
+\begin{enumerate}[label=\textbf{T\arabic*.}]
+  \item \textbf{The best is not even marginally significant before correction.} The
+    best scanned strategy (\texttt{GS}, rolling OLS $w180$, net Sharpe $\approx0.35$)
+    has a one-sided Newey--West HAC $p$ of $0.059$ against the null of zero mean daily
+    net P\&L --- above the uncorrected $5\%$ line. Its edge is spread over only 90
+    round trips across sixteen years, so most days contribute zero P\&L and the HAC
+    $t$ stays small; a high Sharpe on sparse, autocorrelated P\&L is exactly the
+    profile an i.i.d. $t$-test would overstate and the HAC correction tames.
+  \item \textbf{Bonferroni.} With $M=44$ the marginal bar is
+    $0.05/44\approx0.0011$; the best strategy's adjusted $p$ is $1.0$ and \textbf{zero}
+    of the $44$ strategies rejects the null after the correction
+    (\autoref{fig:multtest_pvalues}).
+  \item \textbf{White Reality Check and Hansen SPA.} On the full $44$-column matrix of
+    daily net returns (stationary bootstrap, 1,200 draws), the White (2000) Reality
+    Check returns $p\approx0.87$ and Hansen's (2005) SPA $p\approx0.64$ --- neither
+    anywhere near rejecting the null that the best scanned strategy is no better than
+    zero.
+\end{enumerate}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/multtest_pvalues.png}
+\caption{One-sided HAC $p$-values of the $M=44$ scanned strategies (log scale). The
+best ($p=0.059$) sits above the uncorrected 5\% line (dashed), let alone the
+Bonferroni bar $0.05/44$ (dotted); none survives.}
+\label{fig:multtest_pvalues}
+\end{figure}
+
+\input{tables/multtest.tex}
+
+\paragraph{Explicit verdict.} \textbf{No scanned net-Sharpe is statistically
+distinguishable from zero after a fair multiple-testing correction.} Even without
+correcting, the best raw HAC $p$ is $0.059$; Bonferroni, White RC and Hansen SPA all
+clear it. This is the expected, honest endpoint of Parts 4--9: the daily edge is real
+in \emph{sign} (positive IC, stationary adaptive spread, low-turnover hedges beating
+high-turnover ones out-of-sample) but small relative to cost drag and noise, so it
+cannot survive a search of the breadth reported here. What \emph{is} defensible is
+qualitative and directional: the sign and structure of the results (mean reversion of
+the causal rolling spread, the smooth low-noise Kalman being the best adaptive hedge,
+linear beating nonlinear net of cost) are internally consistent, while the point
+estimates of net Sharpe are not statistically strong.
+
+\paragraph{Pairwise Diebold--Mariano.} Beyond the ``best vs zero'' question, do the
+candidate hedges differ from one another? \autoref{fig:multtest_forest} applies the
+Diebold--Mariano test to the daily \emph{net-return} difference of the best
+within-\texttt{ADBE} hedge (Kalman $q=10^{-5}$) against every other \texttt{ADBE}
+variant over the same window, using a Newey--West HAC standard error of the mean
+difference (valid under the serial correlation of multi-day holds).
+\autoref{fig:multtest_forest} shows every 95\% confidence interval spans zero: no
+\emph{ADBE} pair is distinguishable. The hedge differences Parts 5--8 emphasised
+(smooth low-turnover vs. churning windowed refits) are economically large and
+directional but statistically within noise on a single sixteen-year panel of one
+daily-frequency basket --- the usual power limitation of comparing cost-limited,
+low-turnover strategies.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/multtest_forest.png}
+\caption{Diebold--Mariano forest on \texttt{ADBE}: mean daily net-P\&L difference of
+the best within-\texttt{ADBE} hedge (Kalman $q=10^{-5}$) minus each other hedge, with
+Newey--West HAC 95\% CIs. Every interval spans zero; no pair is distinguishable.}
+\label{fig:multtest_forest}
+\end{figure}
 
 % =============================================================================
 % 9. SYSTEM ARCHITECTURE & LATENCY ANALYSIS
