@@ -491,8 +491,75 @@ bias--variance assessment; Kalman-filtered time-varying beta. \emph{[Parts 8, 9.
 % =============================================================================
 \section{Backtest Results}
 \label{sec:backtest}
-Gross vs.\ net of costs, cost sensitivity, regime breakdown, bootstrap confidence
-intervals. \emph{[Parts 4, 7.]}
+
+\subsection{Walk-forward methodology and no-lookahead}
+\label{sec:bt:method}
+All backtests are \emph{walk-forward} and \emph{lookahead-free}. For a target and its
+basket the engine (\texttt{src/engine/spread\_backtest.h}) maintains a rolling
+regression of the target's log price on the basket's log prices over a window $W$; the
+window used to score day $t$ ends at day $t-1$, so the hedge betas are causal and the
+target's own day-$t$ price never enters its own fitted value. The standardized residual
+$z_t$ triggers a market-neutral entry ($|z_t|\ge z_{entry}$), which is executed only from
+the \emph{next} bar (a decision made with data through close($t$) starts earning on bar
+$t{+}1$). This one-bar execution delay is asserted by a dedicated unit test that
+manufactures a single large mispricing and verifies the position never becomes active on
+the signal day itself. We use the sample split train 2010--2018 / validation
+2019--2021 / test 2022--2026 for the later parameter and model comparisons; the rolling
+window design here is itself a form of walk-forward validation that never refits on
+future data.
+
+\subsection{Transaction-cost model}
+\label{sec:bt:cost}
+Two cost layers are applied, and \emph{every} result below is reported gross and net.
+\begin{itemize}
+  \item \textbf{Proportional cost} charged on the traded gross notional at each open and
+    close (both legs, both sides), covering half-spread plus commission. The baseline is
+    10 basis points one-way; a full sensitivity sweep over 0--50 bps is reported.
+  \item \textbf{Market impact} follows the square-root law
+    \cite{almgren2005},
+    \begin{equation}
+      \text{impact} \;\propto\; \sigma\,\sqrt{\frac{Q}{V}} ,
+      \label{eq:impact}
+    \end{equation}
+    where $Q$ is the order size, $V$ the average daily volume and $\sigma$ the asset's
+    return volatility. Because the positions here are dollar-normalized to \$1 gross and
+    the assets are highly liquid, participation $Q/V$ is small and impact is a second-order
+    add-on to the proportional cost; the model is implemented and its participation term
+    will bind in the capacity analysis (\S robustness).
+\end{itemize}
+Sizing: each open position is normalized so gross notional equals \$1 (short \$1 of the
+target, long $\beta_i$ dollars of each basket name, rescaled by
+$g = 1+\sum_i\lvert\beta_i\rvert$); this makes the book approximately market-neutral and
+the NAV directly comparable across trades.
+
+\subsection{Single-basket demonstration}
+\label{sec:bt:base}
+As the correctness core, we first trade one economically coherent basket: target
+\texttt{ADBE} (Adobe) against application-software peers \texttt{CRM}, \texttt{ADSK},
+\texttt{INTU} (all Information Technology; 4{,}190 common trading days, 2010--2026).
+With a 120-day regression window and entry/exit z-bands of $2.0/0.5$,
+\autoref{fig:equity_curve} shows the gross and net NAV; \autoref{tab:backtest_base} and
+\autoref{fig:cost_sensitivity} summarize. The gross Sharpe is $\approx 0.39$ over the
+full sample, but at 10 bps one-way the net Sharpe falls to $\approx 0.05$ and turns
+negative at higher costs -- a typical and honest finding for daily-frequency spread
+trading, and the motivation for the model/parameter work in later sections. This is
+one basket; the multi-basket portfolio construction and risk controls are treated in
+the portfolio sections of this report.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/equity_curve.png}
+\caption{Gross vs net equity (log NAV) of the spread strategy on target ADBE /
+basket \{CRM, ADSK, INTU\}, 2010--2026.}
+\label{fig:equity_curve}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\linewidth]{figures/cost_sensitivity.png}
+\caption{Annualized net Sharpe as a function of one-way transaction cost.}
+\label{fig:cost_sensitivity}
+\end{figure}
+
+\input{tables/backtest_base.tex}
 
 % =============================================================================
 % 8. ROBUSTNESS AND STATISTICAL VALIDITY

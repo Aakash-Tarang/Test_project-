@@ -43,6 +43,11 @@ else
   echo "  [SKIP] no report/build_report.py yet"
 fi
 
+echo "== Spread backtest (Part 4) =="
+"$PY" scripts/analysis/capture_backtest.py >/dev/null 2>&1; chk "backtest capture runs" $?
+[ -f results/tables/backtest_summary.csv ]; chk "backtest summary table present" $?
+[ -f results/figures/equity_curve.png ]; chk "equity curve figure present" $?
+
 echo "== statkit (Part 2) =="
 "$PY" scripts/run_statkit_tests.py >/dev/null 2>&1; chk "statkit unit tests pass" $?
 

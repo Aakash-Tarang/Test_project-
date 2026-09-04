@@ -16,6 +16,7 @@
 #include "../src/portfolio/portfolio_book.h"
 #include "../src/engine/latency_hist.h"
 #include "../src/engine/backtest_engine.h"
+#include "../src/engine/spread_backtest.h"
 
 using namespace statarb;
 
@@ -303,7 +304,104 @@ static void test_engine_runs_and_measures_latency() {
 }
 
 // ---------------------------------------------------------------------------
+// Spread backtest correctness (Part 4)
+// ---------------------------------------------------------------------------
+// Build cointegrated-like synthetic prices: features geometric random walks,
+// target log-price = 0.7 F1 + 0.5 F2 + a controlled spread term `sp`.
+static std::vector<std::vector<double>> synth_prices(size_t T, size_t k,
+                                                     const std::vector<double>& sp,
+                                                     unsigned seed = 1) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> nd(0.0, 1.0);
+    std::vector<std::vector<double>> P(1 + k, std::vector<double>(T));
+    std::vector<double> F1(T), F2(T), lgF(k, 0.0);
+    // one shared-ish factor + idiosyncratic
+    double flog = 0.0;
+    for (size_t t = 0; t < T; ++t) {
+        flog += 0.0005 + 0.01 * nd(rng);
+        double lf = 0.8 * flog;
+        std::vector<double> feat(k);
+        for (size_t i = 0; i < k; ++i) feat[i] = lf + 0.01 * nd(rng) * std::sqrt((double)t + 1);
+        // target log price
+        double tl = 0.7 * feat[0] + 0.5 * (k > 1 ? feat[1] : feat[0]) + sp[t];
+        P[0][t] = std::exp(tl);
+        for (size_t i = 0; i < k; ++i) P[1 + i][t] = std::exp(feat[i]);
+    }
+    (void)lgF; (void)F1; (void)F2;
+    return P;
+}
+
+// Deterministic series: features grow smoothly, target = 0.7 f1 + 0.5 f2 + sp.
+// No noise => the only source of a large z is the injected spike, so no spurious
+// trades occur before it.
+static std::vector<std::vector<double>> det_prices(size_t T, size_t k,
+                                                   const std::vector<double>& sp) {
+    std::vector<std::vector<double>> P(1 + k, std::vector<double>(T));
+    for (size_t t = 0; t < T; ++t) {
+        std::vector<double> feat(k);
+        double lf = 0.001 * (double)t;
+        for (size_t i = 0; i < k; ++i) feat[i] = lf * (1.0 + 0.1 * (double)i);
+        P[0][t] = std::exp(0.7 * feat[0] + 0.5 * feat[1] + sp[t]);
+        for (size_t i = 0; i < k; ++i) P[1 + i][t] = std::exp(feat[i]);
+    }
+    return P;
+}
+
+static void test_backtest_one_bar_delay_no_lookahead() {
+    const size_t T = 500, k = 2, window = 60;
+    std::vector<double> sp(T, 0.0);   // zero spread => z ~ 0, flat
+    auto P = det_prices(T, k, sp);
+    size_t t0 = 250;
+    P[0][t0] *= 2.5;                 // huge single-day target spike => z[t0] large
+    statarb::SpreadConfig cfg;
+    cfg.window = window; cfg.entry_z = 3.0; cfg.exit_z = 0.5; cfg.cost_one_way = 0.0005;
+    auto r = statarb::run_spread_backtest(P, cfg);
+    // before t0 there must be no position (deterministic, z~0)
+    for (size_t t = window + 1; t < t0; ++t) CHECK(r.pos[t] == 0);
+    // The spike is only visible at bar t0, so a position can open at the earliest
+    // bar t0+1. pos[t0] (active during bar t0) must still be 0.
+    CHECK(r.pos[t0] == 0);
+    bool opened = (r.pos[t0 + 1] != 0);
+    // If it opened (spike z>entry), it opened with the correct sign (short target).
+    if (opened) CHECK(r.pos[t0 + 1] == 1);
+    // never trade before the window is warm
+    for (size_t t = 0; t <= window; ++t) CHECK(r.pos[t] == 0);
+}
+
+static void test_backtest_no_trade_when_too_short() {
+    const size_t T = 40, k = 2;   // shorter than window => no warm window => no trades
+    std::vector<double> sp(T, 0.0);
+    auto P = synth_prices(T, k, sp, 3);
+    statarb::SpreadConfig cfg;
+    cfg.window = 120;
+    auto r = statarb::run_spread_backtest(P, cfg);
+    CHECK(r.n_trades == 0);
+    for (auto p : r.pos) CHECK(p == 0);
+}
+
+static void test_backtest_costs_never_improve_net() {
+    // oscillating square-wave spread => many trades
+    const size_t T = 1500, k = 2, window = 60;
+    std::vector<double> sp(T, 0.0);
+    for (size_t t = 0; t < T; ++t) sp[t] = (t / 40) % 2 == 0 ? 0.8 : -0.8;
+    auto P = synth_prices(T, k, sp, 11);
+    statarb::SpreadConfig cfg;
+    cfg.window = window; cfg.entry_z = 0.3; cfg.exit_z = 0.05; cfg.cost_one_way = 0.002;
+    auto r = statarb::run_spread_backtest(P, cfg);
+    CHECK(r.n_trades > 0);
+    // net log NAV must never exceed gross (costs only subtract)
+    for (size_t t = 0; t < T; ++t)
+        CHECK(r.lognav_net[t] <= r.lognav_gross[t] + 1e-12);
+    CHECK(r.cost_paid > 0.0);
+    // gross lognav should beat net by (at least) the cost
+    CHECK(r.lognav_net[T - 1] < r.lognav_gross[T - 1]);
+}
+
+// ---------------------------------------------------------------------------
 int run_engine_tests() {
+    RUN(test_backtest_one_bar_delay_no_lookahead);
+    RUN(test_backtest_no_trade_when_too_short);
+    RUN(test_backtest_costs_never_improve_net);
     RUN(test_buffer_basic_and_contiguous);
     RUN(test_no_allocation_in_hot_push_path);
     RUN(test_spd_solve);

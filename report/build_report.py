@@ -36,6 +36,9 @@ def regenerate():
         # C++ engine benchmarks (Part 3): capture then render.
         os.path.join(ROOT, "scripts", "analysis", "capture_engine_bench.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_engine_results.py"),
+        # Spread backtest (Part 4): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "capture_backtest.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_backtest.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -159,6 +162,12 @@ def render_html_preview():
 
     # Embed Part 3 C++ engine latency + cache figures (System Architecture).
     for png in ("latency_hist.png", "cache_bench.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+
+    # Embed Part 4 backtest equity curve + cost sensitivity (Section 7).
+    for png in ("equity_curve.png", "cost_sensitivity.png"):
         fp = os.path.join(ROOT, "results", "figures", png)
         if os.path.exists(fp):
             html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
