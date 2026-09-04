@@ -53,6 +53,12 @@ echo "== Model comparison (Part 5) =="
 [ -f results/figures/model_compare_sharpe.png ]; chk "model comparison Sharpe figure present" $?
 [ -f report/tables/model_compare.tex ]; chk "model comparison table present" $?
 
+echo "== Diagnostics (Part 6) =="
+"$PY" scripts/analysis/run_diagnostics.py >/dev/null 2>&1; chk "diagnostics driver runs" $?
+[ -f results/tables/diagnostics_summary.csv ]; chk "diagnostics summary present" $?
+[ -f results/figures/diagnostics_halflife.png ]; chk "diagnostics half-life figure present" $?
+[ -f report/tables/diagnostics.tex ]; chk "diagnostics table present" $?
+
 echo "== statkit (Part 2) =="
 "$PY" scripts/run_statkit_tests.py >/dev/null 2>&1; chk "statkit unit tests pass" $?
 

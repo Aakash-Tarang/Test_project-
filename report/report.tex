@@ -670,8 +670,108 @@ basket \{CRM, ADSK, INTU\}, 2010--2026.}
 % =============================================================================
 \section{Robustness and Statistical Validity}
 \label{sec:robustness}
-Multiple-testing correction numbers, Diebold--Mariano results, sensitivity heatmaps.
-\emph{[Parts 6, 10.]}
+This section applies the diagnostic battery of \S\ref{sec:diagnostics} to the residuals
+of the final spread models (Part 6), then states a first multiple-testing bound over the
+models scanned so far. The formal data-snooping corrections (Bonferroni across the full
+universe, White Reality Check, Hansen's SPA) and the pairwise Diebold--Mariano table are
+completed in Part 10.
+
+\subsection{Statistical diagnostics on the final residuals}
+\label{sec:diag:results}
+The battery is run on two kinds of residual for target \texttt{ADBE} vs the basket
+\{\texttt{CRM}, \texttt{ADSK}, \texttt{INTU}\}: a \emph{static} hedge (one fixed
+OLS/Ridge fit of the log-price relation, the object the Engle--Granger and HAC
+questions refer to) and the \emph{rolling} causal spread (the 120-bar walk-forward
+hedge the strategy actually trades, \S\ref{sec:bt:method}). Results are reported over
+the full sample and the out-of-sample 2022+ period. \autoref{tab:diag_stationarity}
+summarises; \autoref{fig:diag_residual} shows the traded spread and its
+autocorrelogram.
+
+\input{tables/diagnostics.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/diagnostics_residual.png}
+\caption{The causal rolling spread actually traded (top) and its autocorrelation
+function (bottom). The ACF decays to the 95\% band by roughly lag 10--20, consistent
+with the estimated OU half-life of $\approx\!9.4$ trading days.}
+\label{fig:diag_residual}
+\end{figure}
+
+The reading of \autoref{tab:diag_stationarity} is clear and, in part, uncomfortable:
+\begin{enumerate}[label=\textbf{D\arabic*.}]
+  \item \textbf{The static long-run hedge is NOT a clean cointegrating residual.}
+    Over the full 2010--2026 sample the fixed OLS (and Ridge) hedge residual fails to
+    reject a unit root (ADF $p\approx0.08$, verdict \emph{unit\_root}) and its implied OU
+    half-life is $170$--$178$ trading days (worse, $460$--$475$, in 2022+). A single
+    hedge ratio estimated once over sixteen years cannot pin ADBE to its peers; the
+    relationship drifts. This is why naive long-horizon cointegration is not the trading
+    vehicle.
+  \item \textbf{The causal rolling spread IS mean-reverting.} The spread the strategy
+    actually trades rejects a unit root decisively (ADF $p<0.001$, both full and test),
+    is classified \emph{stationary} in the out-of-sample window, and reverts with an OU
+    half-life of $\approx\!9.4$ trading days that is stable across 2010--2026 and
+    2022+. The adaptive, walk-forward hedge is what creates the tradeable, stationary
+    spread; the fixed one does not. This is direct, live evidence for the value of
+    time-varying (rolling, and later Kalman, \S\ref{sec:nonlinear}) hedge estimation.
+  \item \textbf{Strong residual serial correlation and heteroskedasticity.} Durbin--Watson
+    is $<0.15$ (large positive first-order serial correlation) and Ljung--Box rejects
+    white noise ($p<10^{-3}$) for every residual. This is expected: a persistent
+    mispricing that reverts over days is, by construction, autocorrelated. Combined with
+    Breusch--Pagan and White both rejecting homoskedasticity ($p<10^{-3}$) for the
+    hedge regression, it is exactly the profile that makes \emph{i.i.d.} standard errors
+    invalid and the HAC correction of \S\ref{sec:diag:hac} necessary.
+\end{enumerate}
+
+\subsection{Cointegration and hedge significance}
+\label{sec:diag:coint}
+\autoref{tab:diag_coint} reports the Engle--Granger two-step test of ADBE against each
+basket name individually, the Johansen cointegration rank of the full four-name
+log-price vector, and the hedge $t$-statistics before/after the Newey--West HAC
+correction. The basket is genuinely cointegrated at the portfolio level (Johansen rank
+$r=2$ at 95\%), and the individual spreads are cointegrated for \texttt{CRM}
+($p=0.003$) and \texttt{ADSK} ($p=0.033$) but not clearly for \texttt{INTU}
+($p=0.117$). Consistently, the full-sample hedge weights on \texttt{CRM} and
+\texttt{ADSK} are strongly significant even after the HAC correction ($t\approx7.3$ and
+$9.4$), whereas \texttt{INTU}'s weight is insignificant ($t\approx0.5$). The hedge is
+economically real but dominated by two of the three peers -- a finding that the
+sparsification result of \S\ref{sec:mc:findings} (dropping a name degraded the book)
+qualifies, since INTU still reduces residual variance in the rolling estimate even
+where it is not individually cointegrated over the long sample.
+
+\subsection{Half-life versus holding period}
+\label{sec:diag:halflife}
+\autoref{fig:diag_halflife} contrasts the estimated OU half-life with the realized
+average holding period. The traded (rolling) spread has $\tau_{1/2}\approx9.4$ bars,
+while the strategy holds trades an average of $16$--$18$ bars (full sample and test)
+-- roughly \textbf{1.7--1.9 half-lives per trade}. Holding near two half-lives captures
+$\approx$75\% of the reversion, so the horizon is reasonable, but it sits on the
+turnover-heavy side given the 10\,bps cost drag that Part 4 showed erases most of the
+daily edge. The static hedge's nominal half-life of $\sim$200 bars is not a tradeable
+quantity; it reflects the drifting (non-stationary) fixed hedge rather than the speed
+of the actual spread, and is reported to emphasise the difference rather than as a
+strategy parameter.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.85\linewidth]{figures/diagnostics_halflife.png}
+\caption{OU half-life (log scale) of the static hedge vs the realized holding period,
+full sample and 2022+ test. The static-hedge half-life ($\sim$170--475 bars) is
+reported only to contrast with the traded rolling spread ($\approx$9.4 bars, dashed
+line) that the strategy actually holds for $\sim$17 bars.}
+\label{fig:diag_halflife}
+\end{figure}
+
+\subsection{A first multiple-testing statement}
+\label{sec:diag:multtest}
+The Part 5 comparison scanned $M=13$ walk-forward candidate strategies (OLS, three
+Ridge, three Lasso, three ElasticNet, three PCA hyper-parameter settings) on one
+basket at one cost level. Under a Bonferroni correction for $\alpha=0.05$ the marginal
+significance bar is $p<0.05/13\approx0.0038$. None of the full-sample net Sharpes
+($\le0.09$) individually approaches significance on their own $t$-distribution before
+even this modest correction is applied, so the honest preliminary verdict is that
+\textbf{the within-basket edge is real in sign (positive IC, stationary adaptive
+spread) but not statistically strong enough to survive a fair multiple-testing bar} --
+exactly the question Part 10 answers rigorously across the whole universe with the
+White Reality Check and Hansen's SPA.
 
 % =============================================================================
 % 9. SYSTEM ARCHITECTURE & LATENCY ANALYSIS

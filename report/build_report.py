@@ -42,6 +42,9 @@ def regenerate():
         # Baseline model comparison (Part 5): capture then render.
         os.path.join(ROOT, "scripts", "analysis", "compare_models.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_model_comparison.py"),
+        # Statistical diagnostics (Part 6): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "run_diagnostics.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_diagnostics.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -181,6 +184,27 @@ def render_html_preview():
         fp = os.path.join(ROOT, "results", "figures", png)
         if os.path.exists(fp):
             html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+
+    # Embed Part 6 diagnostics figures (Robustness section).
+    for png in ("diagnostics_residual.png", "diagnostics_halflife.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+    dt = os.path.join(ROOT, "results", "tables", "diagnostics_summary.csv")
+    if os.path.exists(dt):
+        try:
+            import csv as _csv
+            with open(dt) as f:
+                rws = list(_csv.reader(f))
+            html.append("<h2>Diagnostics battery (Robustness / Part 6)</h2><table><tr>")
+            for h in rws[0]:
+                html.append(f"<th>{h}</th>")
+            html.append("</tr>")
+            for r in rws[1:]:
+                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
+            html.append("</table>")
+        except Exception:
+            pass
 
     # Embed Part 2 synthetic-validation table (Methodology / appendix).
     vt = os.path.join(ROOT, "results", "tables", "statkit_validation.csv")
