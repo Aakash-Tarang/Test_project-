@@ -29,6 +29,8 @@ import sys
 import tarfile
 from datetime import datetime, timezone
 
+import pandas as pd
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RAW = os.path.join(ROOT, "data", "raw")
 MANIFEST_DIR = os.path.join(ROOT, "data", "manifest")
