@@ -33,6 +33,9 @@ def regenerate():
         os.path.join(ROOT, "scripts", "analysis", "make_statkit_validation.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_report_data.py"),
         os.path.join(ROOT, "scripts", "plotting", "render_method_validation.py"),
+        # C++ engine benchmarks (Part 3): capture then render.
+        os.path.join(ROOT, "scripts", "analysis", "capture_engine_bench.py"),
+        os.path.join(ROOT, "scripts", "plotting", "render_engine_results.py"),
     ]
     for s in scripts:
         if os.path.exists(s):
@@ -153,6 +156,12 @@ def render_html_preview():
             fp = os.path.join(ROOT, "results", "figures", png)
             if os.path.exists(fp):
                 html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
+
+    # Embed Part 3 C++ engine latency + cache figures (System Architecture).
+    for png in ("latency_hist.png", "cache_bench.png"):
+        fp = os.path.join(ROOT, "results", "figures", png)
+        if os.path.exists(fp):
+            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
 
     # Embed Part 2 synthetic-validation table (Methodology / appendix).
     vt = os.path.join(ROOT, "results", "tables", "statkit_validation.csv")

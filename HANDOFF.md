@@ -1,84 +1,49 @@
-# HANDOFF — Next session: **Part 3 — C++ Engine Skeleton + Latency Instrumentation**
+# HANDOFF — Next session: **Part 4 — Correctness Core of the Engine**
 
-> Read this entire file before doing anything.
-
----
+> Read this entire file first.
 
 ## 1. Context
-Incremental **Multi-Asset Statistical Arbitrage** project. Done: **Part 0** (plan/environment), **Part 1** (data + universe), **Part 2** (statistical toolkit). Your task now: **Part 3**. Work **only** on `arena/01a029cc-test-project`; commit/push only there. Master plan: `PLAN.md`.
+Incremental **Multi-Asset Statistical Arbitrage** project. Done: **Part 0** plan/env, **Part 1** data (Yahoo 195-name, 2010-2026), **Part 2** statkit, **Part 3** C++ engine skeleton + latency. Now: **Part 4**. Work **only** on `arena/01a029cc-test-project`; commit/push only there. Plan: `PLAN.md`.
 
----
+## 2. Environment (re-verify each session)
+Run `export PATH="$HOME/.local/bin:$PATH"` then `bash environment/check.sh`. **Now 18/18 PASS.** If packages/tools are missing at session start (sandbox may reset installed packages), run `bash environment/setup.sh` first.
+- pip PEP-668 → `pip install --user --break-system-packages`. No TeX engine (report = canonical LaTeX + HTML preview). Only pypi + GitHub reachable.
+- Data persists in workspace snapshot (`data/processed/universe.csv`, 195 tickers, 764,896 rows, QA 10/10). If missing: `python3 scripts/data/clean.py --source yfinance && python3 scripts/data/qa.py` (raw Yahoo CSVs are tracked under `data/raw/yfinance/`).
+- Build: `cmake -S src -B build && cmake --build build -j2`. Binaries: `build/statarbsim` (--version/--test/--demo), `build/microbench`.
 
-## 2. Environment (re-verify with `environment/check.sh`)
-**IMPORTANT — this sandbox does NOT persist installed packages between sessions.** At the start of a session, if `check.sh` shows failures, re-run:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-bash environment/setup.sh          # reinstalls python stack + cmake (user-level)
-bash environment/check.sh          # currently 15/15 checks, must pass
-```
-- `g++`/`make` are system-provided. `cmake` is pip-installed into `~/.local/bin` (add to PATH).
-- pip is PEP-668 → always `python3 -m pip install --user --break-system-packages ...`.
-- **Reachable:** pypi, github.com, api.github.com, codeload. **Blocked:** Yahoo/stooq/Nasdaq, apt, conda, rust, TeX engines.
-- **No TeX engine** → report is canonical LaTeX (`report/report.tex`), built via `report/build_report.py` which regenerates tables/figures and always writes an HTML preview. Compile the PDF wherever a TeX engine exists.
-- **Data persistence:** `data/processed/`, `results/` are git-ignored but usually persist via the workspace snapshot. If `data/processed/universe.csv` is missing, the user's committed raw Yahoo data lives at `data/raw/yfinance/*.csv` (195 files, TRACKED in git); run `python3 scripts/data/clean.py --source yfinance && python3 scripts/data/qa.py`.
+## 3. Part 3 delivered (verified 18/18)
+- C++ engine (dependency-free) under `src/{data,model,signal,portfolio,engine}`:
+  - `data/market_data_buffer.h` — SoA, fixed-capacity, contiguous, no-alloc push.
+  - `model/dense_la.h` — row-major contiguous dense layer: SPD/ridge Cholesky solve + cyclic-Jacobi symmetric eig (for PCA later).
+  - `model/rolling_regression.h` — incremental rank-1 windowed regression, flat row-major ring buffer, pre-allocated Cholesky scratch, **no allocation in update()/compute()** (verified).
+  - `model/basket_selector.h` — OLS/Ridge implemented; Lasso/ElasticNet/PCA stubbed (Part 5).
+  - `signal/signal_generator.h`, `portfolio/portfolio_book.h` (flat table; full risk in Part 7), `engine/latency_hist.h`, `engine/backtest_engine.h`.
+- `test/minimal_test.hpp` + `test/engine_tests.cpp`: **13 tests / 1006 checks, 0 failed** (`build/statarbsim --test`).
+- `bench/microbench.cpp`: vector-vs-deque (~1.15x) and SoA-vs-AoS (~1.03x) measured honestly.
+- Report §9 written; figures `results/figures/{latency_hist,cache_bench}.png` + `report/tables/engine_bench.tex` from live runs via `scripts/analysis/capture_engine_bench.py` + `scripts/plotting/render_engine_results.py`, wired into `report/build_report.py`.
 
-## 3. Primary dataset now (from Part 1 refresh this session)
-- **Yahoo Finance** daily OHLCV + fully-adjusted Adj Close, user-downloaded 2026-09-04, committed under `data/raw/yfinance/`.
-- **195 tickers**, 2010-01-04 .. 2026-09-01 (~16.7 yr), 764,896 cleaned rows in `data/processed/universe.csv`, QA **10/10**.
-- 195 < 200 spec target → disclosed in report §Data. NYSE (501-name, 2010-2016) obtainable in-sandbox via `--source github` as an auxiliary cross-section.
-- `sp500_symbols.csv`/`sector_map.json` (505 names with GICS sectors) are committed under `scripts/data/`.
+## 4. YOUR TASK — Part 4: Correctness Core of the Engine
+Make the simulation loop **correct, walk-forward, cost-aware, and lookahead-free** (spec §4.2), and harden the engine with edge-case tests.
 
----
+### 4.1 Deliverables
+1. **Walk-forward backtest loop** in `BacktestEngine` (real, streaming the `MarketDataBuffer` history, not the synthetic demo): for each bar at time t, generate a signal from data through t but **execute at t+1** (no lookahead). Document train/validation/test date split in the report §7 (e.g. train 2010-2018, val 2019-2021, test 2022+ — adapt to the 2010-2026 Yahoo data).
+2. **Cost model** (spec §4.2): empirically estimated per-name bid-ask spread (use open-high-low proxy or a documented flat spread per liquidity tier), commission, and market-impact via the square-root model `impact ∝ σ√(Q/V)`. Report gross AND net of costs.
+3. **Portfolio/equity accounting**: PortfolioBook already stores flat positions + equity history; implement per-bar P&L mark-to-market, position sizing from the residual z-score / inverse-vol, turnover tracking.
+4. **Edge cases & no-lookahead tests**: window-not-yet-full already tested; add (a) delisting / missing bar mid-backtest, (b) signal at last available bar can't be filled (no future), (c) cost applied on both entry and exit, (d) a brute "delayed-by-one" cross-check that signals built on time-t info are only tradeable at t+1.
+5. **Unit tests** for all of the above (extend `test/engine_tests.cpp`, still via `--test`).
+6. **Real run + figures**: run the engine over the actual `universe.csv` for a representative basket to produce an equity curve gross vs net (a real result, even if only for one target/basket — full multi-basket is Part 7). Save to `results/backtests/` and plot via a new script into `results/figures/` + report §7. Report numbers must come from the run.
+7. **Report**: write §7 (Backtest Results) prose for the walk-forward methodology + the cost model derivation (square-root impact), and include the gross/net equity figure and a small table.
 
-## 4. YOUR TASK — Part 3: C++ Engine Skeleton + Latency Instrumentation
+### 4.2 Exit gate (must pass before done)
+- [ ] Walk-forward loop is lookahead-free by construction; add a specific no-lookahead unit test that fails if a bar t signal is filled at t.
+- [ ] Cost model implemented (spread + commission + square-root market impact); gross and net P&L both computed.
+- [ ] Edge-case tests (delisting/missing bar, cost both sides, stale last signal) pass.
+- [ ] All prior tests still pass; `environment/check.sh` passes (18 + any new → ≥18); new checks added for Part 4 tests if practical.
+- [ ] Real-data engine run produces a gross-vs-net equity figure and backtest metrics saved to `results/`; report §7 updated and regenerated.
+- [ ] `git status` clean after commit; `HANDOFF.md` written for **Part 5 (Baseline Model Comparison: OLS/Ridge/Lasso/ElasticNet/PCA)**.
 
-### 4.1 Goal
-Stand up the **low-latency, dependency-free, latency-instrumented C++ core** per spec §5. Build the required class architecture with correctness tests from day one. C++ is the simulation core — Python stays research/plotting only.
-
-### 4.2 Environment decision (document in code + report)
-Spec §5.1 wants Eigen for SIMD-friendly aligned contiguous matrices, BUT **this sandbox cannot fetch Eigen** (apt/conda blocked) and cannot run external downloads except GitHub/pypi. Eigen is header-only and available on GitHub — **you MAY vendor a minimal Eigen into `third_party/eigen/`** IF reachable, otherwise implement hand-rolled dense linear algebra (a small matrix class + LDLT/LU solve + eigendecomposition via symmetric QR/Jacobi) that is contiguous and cache-friendly. The project rule is **dependency-free at build time**: no `#include` that isn't in the repo or the system toolchain. Justify whichever route in the code comments and the report.
-
-### 4.3 Required classes (mirror spec §5.2; keep the repo structure under `src/`)
-Implement in `src/data, src/model, src/signal, src/portfolio, src/engine`:
-- `src/data/market_data_buffer.{h,cpp}` — **SoA ring buffer** over `std::vector` (separate contiguous `timestamps_`, `prices_`, `volumes_`), fixed capacity, `push()` O(1) no-alloc, contiguous `std::span` views, no dynamic allocation after construction. Unit test eviction/ring-wrap.
-- `src/model/rolling_regression.{h,cpp}` — rolling linear regression with **O(n_features²) incremental rank-1 update** of `XᵀX`/`XᵀY` (Welford/online normal equations), window eviction via a flat row-major `feature_history_` ring buffer; expose `beta()`, `r_squared()`, `residual()`, `residual_zscore()`. `ridge_lambda` support. Test against brute-force recomputation to tolerance.
-- `src/model/basket_selector.{h,cpp}` — interface + OLS/Ridge at minimum this Part (Lasso/ElasticNet/PCA paths come in Part 5 — stub them cleanly now with an enum so the API is stable).
-- `src/signal/signal_generator.{h,cpp}` — entry/exit z bands + half-life-aware gate; emits a `TradeSignal`.
-- `src/portfolio/portfolio_book.{h,cpp}` — flat `std::vector<double>` positions indexed by asset_id, gross/net exposure. (Full risk controls/VaR in Part 7; keep the flat-table design.)
-- `src/engine/backtest_engine.{h,cpp}` — orchestrates the pipeline with **per-stage latency histograms** (p50/p95/p99) via `std::chrono::high_resolution_clock` or `rdtsc`; `LatencyReport latencyStats()`.
-- `src/latency_hist.{h,cpp}` (or in engine) — a fixed-capacity histogram over a flat array, no allocation, computing p50/p95/p99.
-
-### 4.4 Build & test
-- `src/CMakeLists.txt` currently builds a single `statarbsim` executable from `src/main.cpp`. Extend it: C++17, `-O2 -Wall -Wextra`, and a `--test` mode that runs the hand-rolled test harness.
-- Add `test/minimal_test.hpp` — a tiny `RUN_TEST(name){...}` macro + assertion helpers, and `src/main.cpp` `--test` flag runs all tests. (No external framework needed; spec accepts Catch2/GoogleTest but we are dependency-light.)
-- Unit tests required now: rolling-regression incremental == brute force (tolerance ~1e-8), ring-buffer eviction correctness, SoA push/span correctness, window-not-yet-full, no-allocation in hot path (override `operator new` / count allocations in a test), beta under `ridge_lambda`, residual/zscore math.
-- `bench/` microbenchmarks (compile + runnable, real numbers): `vector` vs `deque` rolling window, SoA vs AoS. Report measured throughput/cache-miss where possible (`perf stat` if available; otherwise cycle-count with `rdtsc` or `std::chrono`).
-
-### 4.5 Report + figures
-- Write report §9 text headers and, from the **real** benchmark run, generate latency histogram + cache/SoA figures into `results/figures/` (a `scripts/plotting/render_engine_*.py` or C++-emitted CSV that the report builder plots). Follow the convention: numbers must come from an actual run, not hand-typed.
-- Report the environment decision (§Eigen vs hand-rolled), the SoA/cache rationale, and the no-alloc verification in §9 prose.
-
-### 4.6 Exit gate (must pass before done)
-- [ ] C++ engine compiles (CMake) and `--test` runs **all** unit tests passing.
-- [ ] Incremental rolling regression matches brute-force recomputation to stated tolerance.
-- [ ] No dynamic allocation verified in the hot path (allocation-count test passes).
-- [ ] Latency histograms report real p50/p95/p99 numbers per stage (no placeholders).
-- [ ] `bench/` runs and records real vector-vs-deque and SoA-vs-AoS numbers.
-- [ ] Report §9 section drafted with the architecture rationale + environment decision; latency & bench figures generated from real runs and referenced.
-- [ ] `environment/check.sh` passes (15 existing + new C++ `--test` check → ≥16).
-- [ ] `git status` clean after commit; new `HANDOFF.md` written for **Part 4 (Correctness Core of the Engine: walk-forward loop, costs, no-lookahead, edge cases)**.
-
-### 4.7 Hints / pitfalls
-- **Ring buffers over flat arrays, not `std::deque`/`std::list`** — spec §5.1 is explicit (cache lines, spatial locality, prefetch). Justify in comments.
-- **SoA over AoS** for the hot per-bar loop. Justify + benchmark.
-- **Avoid vtables/heap alloc in the per-tick path** — templates/CRTP if polymorphism is needed; pre-allocate everything.
-- Rolling regression: maintain running `XᵀX`, `XᵀY`, and sums; on window eviction subtract the leaving row's outer product (rank-1), on push add the new row's outer product — never refit from scratch in the hot path. Because a plain online inverse can drift, you may refit `(XᵀX)`'s inverse via Cholesky at each step only if O(n³) is acceptable for small n, or maintain the inverse via Sherman–Morrison; document the numerical approach and its accuracy test vs brute force.
-- Keep the C++ self-contained and fast to compile (single translation unit where practical) to keep iteration fast on 2 cores.
-- Do NOT implement the full multi-basket portfolio/VaR yet (Part 7) — but design `PortfolioBook` so it can be extended.
-
----
-
-## 5. Ritual (every Part)
-1. Implement → run tests + `environment/check.sh` → update report → commit → push to `arena/01a029cc-test-project`.
-2. Overwrite `HANDOFF.md` for the next Part.
-3. Keep conventions (paths, report builder, regeneration). Don't restructure existing files.
+### 4.3 Hints
+- Keep the C++ dependency-free and fast. A per-bar solve is O(n_feat³) with tiny n_feat — fine.
+- The engine should consume the committed data cleanly. You may add a small C++ loader for the `data/processed/universe.csv` long panel, or have the engine read a wide matrix you export from Python. Prefer: a `scripts/data/export_engine_input.py` that writes a compact wide binary/CSV (`target, features...`) for a chosen basket to `data/processed/engine/` (git-ignored), and a C++ loader. Document the interface in §7/§9.
+- Timing: latency instrumentation already exists; reuse `LatencyHist` for the per-bar stages in the real loop.
+- Do NOT build the multi-basket/risk-parity portfolio or VaR yet (Part 7) — but keep PortfolioBook/engine structured so it extends.

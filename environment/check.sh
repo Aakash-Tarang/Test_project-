@@ -22,9 +22,15 @@ echo "== Python packages =="
 
 echo "== C++ build smoke (if src exists) =="
 if [ -f src/CMakeLists.txt ]; then
-  rm -rf build && cmake -S src -B build >/dev/null 2>&1 && cmake --build build -j2 >/dev/null 2>&1
+  cmake -S src -B build >/dev/null 2>&1 && cmake --build build -j2 >/dev/null 2>&1
   chk "CMake configure+build" $?
-  if [ -x build/statarbsim ]; then ./build/statarbsim --version >/dev/null 2>&1; chk "engine smoke run" $?; fi
+  if [ -x build/statarbsim ]; then
+    ./build/statarbsim --version >/dev/null 2>&1; chk "engine smoke run" $?
+    ./build/statarbsim --test >/dev/null 2>&1; chk "C++ unit tests pass (--test)" $?
+    ./build/statarbsim --demo >/dev/null 2>&1; chk "engine latency demo runs" $?
+  fi
+  "$PY" scripts/analysis/capture_engine_bench.py >/dev/null 2>&1
+  [ -f results/tables/engine_bench.csv ]; chk "engine bench CSV present" $?
 else
   echo "  [SKIP] no src/CMakeLists.txt yet"
 fi

@@ -7,8 +7,9 @@ Basket statistical arbitrage via regularized regression, nonlinear extensions, a
 ## Current status
 - **Part 0 (done):** master plan, environment reconnaissance, scaffolding, report skeleton.
 - **Part 1 (done):** real data pipeline + universe construction (primary: Yahoo Finance 195-name, 2010–2026, total-return panel; secondary: NYSE/Kaggle 501-name). Report §Data filled.
-- **Part 2 (done):** `scripts/statkit/` statistical foundation toolkit (ADF/KPSS, Engle–Granger/Johansen, DW/Ljung–Box, Breusch–Pagan/White, HAC, OU fit + half-life, Diebold–Mariano, Bonferroni/White-Reality-Check/Hansen-SPA, stationary bootstrap) with 29 passing synthetic unit tests; report §Methodology derivations + appendix validation filled. See [`HANDOFF.md`](HANDOFF.md).
-- **Next:** **Part 3 — C++ Engine Skeleton + Latency Instrumentation.**
+- **Part 2 (done):** `scripts/statkit/` statistical foundation toolkit (ADF/KPSS, Engle–Granger/Johansen, DW/Ljung–Box, Breusch–Pagan/White, HAC, OU fit + half-life, Diebold–Mariano, Bonferroni/White-Reality-Check/Hansen-SPA, stationary bootstrap) with 29 passing synthetic unit tests; report §Methodology derivations + appendix validation filled.
+- **Part 3 (done):** dependency-free C++ engine skeleton under `src/` — SoA `MarketDataBuffer`, incremental `RollingRegression` (rank-1 `XᵀX` ring buffer, no-alloc hot path), `BasketSelector` (OLS/Ridge; Lasso/PCA stubbed), `SignalGenerator`, `PortfolioBook`, `BacktestEngine` with p50/p95/p99 latency histograms, hand-rolled dense LA (Cholesky/ridge + Jacobi eigen). **13 unit tests / 1006 checks pass**, no-alloc verified, latency demo + microbenchs measured; report §9 written. See [`HANDOFF.md`](HANDOFF.md).
+- **Next:** **Part 4 — Correctness Core of the Engine** (walk-forward loop, costs, no-lookahead, delisting edge cases).
 
 ## Quickstart
 ```bash
