@@ -1169,9 +1169,8 @@ Newey--West HAC 95\% CIs. Every interval spans zero; no pair is distinguishable.
 \subsection{Design principles and rationale}
 \label{sec:arch:principles}
 The backtest / execution core is written in C++17, organised under
-\texttt{src/\{data,model,signal,portfolio,engine\}} and driven by the following
-spec-mandated principles, each justified by cache-line reasoning rather than
-asserted:
+	exttt{src/{data,model,signal,portfolio,engine}} and driven by the following
+spec-mandated principles, each justified by cache-line reasoning rather than asserted. In addition to the core backtest units above, the engine ships post-Part-3 modules including 	exttt{src/portfolio/risk.h} which implements inverse-vol weighting with per-name concentration caps (45\%) and water-fill rebalancing, used by the portfolio construction in Section 7 and unit-tested in the C++ test suite; the signal/spread components from Parts 4--9 (Kalman filter, rolling regressions, nonlinear gates) are integrated through the same causal pipeline but are documented respectively in Sections 8 and 9.
 \begin{itemize}
   \item \textbf{Contiguous flat storage over pointer-chasing containers.} Price
     histories, feature-window buffers and position tables are \texttt{std::vector}
