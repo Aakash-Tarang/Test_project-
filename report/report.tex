@@ -1248,17 +1248,20 @@ backtests of Section \ref{sec:backtest}.)
 % =============================================================================
 \section{Discussion: What This Does and Does Not Replicate}
 \label{sec:nonreplicate}
-\emph{[Filled in Part 12.] Explicit, specific: no proprietary alternative data; no
-colocated / FPGA-level execution; no cross-asset-class integration; no live capital
-allocation feedback loops -- and why each matters at real fund level.]}
+The following non-goals are explicitly stated for the fund-level implementation of this research:
+\begin{itemize}
+\item No proprietary alternative data: the analysis uses only publicly available Yahoo Finance equity data (195-name universe, 2010--2026). Incorporating alternative data (fundamental factors, options order flow, sentiment scores) would require a separate data infrastructure and is outside the scope of this report.
+\item No colocated / FPGA-level execution: the C++ engine runs on standard x86 hardware with millisecond-scale latency. Colocation and FPGA optimization are viable at production fund level but are not claimed here.
+\item No cross-asset-class integration: the report studies single-asset baskets within equities. Extending to cross-asset-class strategies (e.g., equity/treasury/futures) is a distinct research program.
+\item No live capital allocation feedback loops: all backtests are historical and simulation-based. Live allocation would require risk management, compliance, and operational infrastructure not addressed in this academic prototype.
+\end{itemize}
 
 % =============================================================================
 % 11. CONCLUSION
 % =============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
-\emph{[Filled in Part 12.] Clear, honest statement of whether a statistically defensible
-edge exists after all corrections and costs, and under what conditions.]}
+A statistically defensible edge does not exist in the headline net Sharpe after fair multiple-testing correction, transaction costs, and out-of-sample validation. The qualitative results (mean reversion of the causal rolling spread, low-turnover smooth hedges beating churny refits, linear beating nonlinear net of cost) are directionally defensible, but no point estimate of net Sharpe is statistically strong when the search breadth (M=44 strategies) and cost drag (10 bps round-trip) are properly accounted for. The daily edge is real in sign and structure but small relative to noise and costs.}
 
 % =============================================================================
 % 12. REFERENCES

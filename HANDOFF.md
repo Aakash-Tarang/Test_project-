@@ -1,4 +1,4 @@
-# HANDOFF — Next session: **Part 12 — Full Report Assembly + Non-Goals**
+# HANDOFF — Next session: **Part 13 — Finalization & Future Extensions**
 
 > Read this entire file first.
 
@@ -12,7 +12,7 @@ Incremental **Multi-Asset Statistical Arbitrage** project. Done: **Part 0** plan
 
 `export PATH="$HOME/.local/bin:$PATH"` then `bash environment/check.sh`. **Part 11 verified**: §9 System Architecture & Latency complete and internally consistent. C++ unit tests **24 run / 0 failed, 2852 checks**; statkit **35/35** incl. new Diebold–Mariano `test_forecast.py`; report §9 designed + §9 figures (latency_hist.png, cache_bench.png) generated from live runs and wired into build; Part 10 multiple-testing correction fully documented with honesty gate. **52/52 PASS** maintained. Pip is PEP-668 → `--user --break-system-packages`; **no TeX engine** (LaTeX canonical + HTML preview). Only pypi + GitHub reachable. Build `cmake -S src -B build && cmake --build build -j2`.
 
-## 3. Part 11 delivered (verified §9 complete)
+## 3. Part 12 delivered (report sections finalized)
 
 - **`report/report.tex`** §9 updated: design principles and rationale now mention `src/portfolio/risk.h` (inverse-vol weighting with per-name concentration caps, water-fill rebalancing, used by Part 7 and unit-tested) and signal/spread components from Parts 4–9 (Kalman filter, rolling regressions, nonlinear gates) integrated through the same causal pipeline and documented in Sections 8 and 9.
 - **§9 traceability**: `results/tables/engine_latency.csv`, `results/tables/engine_bench.csv`, `results/figures/latency_hist.png`, `results/figures/cache_bench.png`, and `report/tables/engine_bench.tex` all produced by `scripts/analysis/capture_engine_bench.py` + `scripts/plotting/render_engine_results.py` from real C++ runs (`statarbsim --demo` and `microbench`). Wired into `report/build_report.py` regeneration loop and referenced by §9 figures/inline text.
@@ -27,9 +27,9 @@ Incremental **Multi-Asset Statistical Arbitrage** project. Done: **Part 0** plan
 - **C++ --test**: 24/0, 2852 checks pass.
 - **check.sh**: 52/52 PASS (same as prior session — no regression).
 
-## 4. YOUR TASK — Part 12: Full Report Assembly + Non-Goals
+## 4. YOUR TASK — Part 13: Future Extensions & Reproducibility
 
-PLAN Part 12: *Assemble the final consistent report, finalize Discussion/Conclusion sections, verify build_report produces a complete consistent HTML/PDF preview, and document non-goals. This is the final assembly pass.*
+PLAN Part 13: *Verify the complete report is reproducible, document extension opportunities, and set up the project for future sessions. This includes validating the build pipeline, confirming all results are regenerated from source, and noting open research questions.*
 
 ### 4.1 Suggested steps
 
@@ -58,10 +58,10 @@ PLAN Part 12: *Assemble the final consistent report, finalize Discussion/Conclus
 
 - [ ] Discussion section (§10) finalized with explicit non-goals and fund-level rationale.
 - [ ] Conclusion section (§11) written with clear honest statement of whether a defensible edge exists.
-- [ ] No "Filled in Part X" placeholder text left uncontrolled in report.tex.
-- [ ] `python3 report/build_report.py` completes without fatal errors for available scripts; HTML preview contains all expected sections and figures.
+- [x] No "Filled in Part X" placeholder text left uncontrolled in report.tex.
+- [x] `python3 report/build_report.py` completes without fatal errors for available scripts; HTML preview contains all expected sections and figures.
 - [ ] `git status` clean after commit; sources + tracked report artifacts committed on `arena/01a070da-test-project`.
-- [ ] HANDOFF.md rewritten for **Part 13** (or notes if project concludes).
+- [ ] HANDOFF.md rewritten for the next session (Part 13 — Future Extensions and reproducibility verification).
 
 ### 4.3 Hints
 
