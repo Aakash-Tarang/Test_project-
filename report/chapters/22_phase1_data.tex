@@ -1,0 +1,199 @@
+% =============================================================================
+%  CHAPTER 14 -- PHASE 1: DATA ACQUISITION AND UNIVERSE CONSTRUCTION
+% =============================================================================
+\section{Phase 1 --- Data acquisition and universe construction}
+\label{ch:phase1}
+
+\textbf{Reproduce it:} \code{python3 scripts/data/clean.py \&\& python3 scripts/data/qa.py
+\&\& python3 scripts/analysis/make\_data\_summary.py \&\& python3
+scripts/plotting/render\_report\_data.py}\\
+\textbf{Math used:} Section~\ref{sec:prob:returns} (returns, adjustment arithmetic).\\
+\textbf{Artifacts:} \code{data/processed/universe.csv}, \code{symbols.csv},
+\code{\_meta.json}; \code{results/tables/\{data\_summary,universe\_by\_year,sector\_counts\}.csv};
+\code{results/figures/\{universe\_by\_year,sector\_comp\}.png};
+\code{report/tables/data\_section.tex}.
+
+\subsection{Goal}
+
+Obtain a real, documented, corporate-action-adjusted equity panel: $\ge200$ names,
+$\ge10$ years of daily data, no lookahead in construction, survivorship bias quantified
+rather than ignored.
+
+\subsection{What was done}
+\label{sec:phase1:universe}
+
+\subsubsection{Acquisition}
+
+Two sources, one primary:
+
+\begin{description}[leftmargin=0pt,style=nextline]
+  \item[Primary --- Yahoo Finance via \code{yfinance}] daily OHLCV plus \code{Adj Close}
+    for the S\&P-500-style symbol list in \code{scripts/data/sp500\_tickers.txt}
+    (505 names), start 2010-01-01, retrieved 2026-09-04 on an internet-enabled machine
+    and committed as one CSV per ticker under \code{data/raw/yfinance/}. \textbf{195} of
+    the 505 returned a usable history, giving the effective universe.
+  \item[Secondary --- NYSE/Kaggle panel via GitHub tarball] 501 U.S.\ securities,
+    split-adjusted daily OHLCV, GICS sectors, 2010-01-04 to 2016-12-30, fetched in-sandbox
+    by \code{download.py --source github} from
+    \code{api.github.com/repos/\{owner\}/\{repo\}/tarball/\{ref\}}. Used only for
+    cross-sectional breadth checks, because it is split-adjusted \emph{only} --- returns
+    computed from it are price returns, missing $\sim$1.5--2.5\%/year of dividends
+    (Section~\ref{sec:prob:returns}).
+\end{description}
+
+\code{download.py} writes a provenance manifest (source, URL/ref, retrieval timestamp,
+SHA-256 per file) to \code{data/manifest/}, so the data is auditable and the checksums
+detect silent changes. Both paths are idempotent.
+
+\subsubsection{Cleaning}
+
+\code{scripts/data/clean.py} ingests whichever raw source is present (preferring
+\code{yfinance}) and produces a uniform long panel
+\code{data/processed/universe.csv} with columns
+\[
+  \texttt{date},\ \texttt{ticker},\ \texttt{open},\ \texttt{high},\ \texttt{low},\
+  \texttt{close},\ \texttt{adj\_close},\ \texttt{volume}.
+\]
+Operations, in order: drop rows with non-positive prices or non-positive volume
+($0.07\%$ of the source); drop duplicate (date, ticker) pairs, last value wins; sort by
+ticker then date; carry Yahoo's \code{Adj Close} through verbatim as \code{adj\_close}
+(it is adjusted for \emph{both} splits and cash dividends, so returns on it are total
+returns, equation~\eqref{eq:totalreturn}); write \code{symbols.csv} with name, GICS
+sector, sub-industry and date-first-added from the bundled
+\code{sp500\_symbols.csv}/\code{sector\_map.json}; write \code{\_meta.json} recording the
+adjustment convention.
+
+\subsubsection{Quality gate}
+
+\code{scripts/data/qa.py} runs ten mechanical checks, all passing:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabular}{lp{0.62\linewidth}}
+\toprule
+Result & Check \\
+\midrule
+PASS & non-empty --- 764{,}896 rows \\
+PASS & positive \code{close} --- 0 non-positive \\
+PASS & positive \code{adj\_close} --- 0 non-positive \\
+PASS & no NaN \code{close} \\
+PASS & no NaN \code{adj\_close} \\
+PASS & no duplicate (date, ticker) --- 0 duplicates \\
+PASS & no zero/negative volume \\
+PASS & $\ge150$ tickers --- \textbf{195} (specification target 200) \\
+PASS & $\ge250$ trading days per symbol (median) --- median \textbf{4{,}190} days \\
+PASS & no excessive calendar gaps --- \textbf{38} gaps $>5$ calendar days across all symbols \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Per-symbol gap statistics are written to \code{results/tables/qa\_gaps.csv}
+(minimum gap 1 day, maximum 5 days for essentially every name --- i.e.\ the panel is a
+clean trading calendar with no missing-price holes).
+
+\subsubsection{Engine input export}
+
+\code{scripts/data/export\_engine\_input.py --target T --basket B1 B2 \dots} pivots the
+long panel to a \emph{strictly balanced} wide matrix (any date on which any name is
+missing is dropped), keeps only positive prices, and writes
+\code{data/processed/engine/<T>.csv} plus a JSON sidecar recording the target, basket,
+per-ticker sectors, observation count and date range. Four baskets are exported, and they
+are the four used in every later phase:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llp{0.30\linewidth}rr}
+\toprule
+Target & Basket & Economic rationale & Bars & Span \\
+\midrule
+\code{ADBE} & \code{CRM}, \code{ADSK}, \code{INTU} & application software (same GICS sub-industry group) & 4{,}190 & 2010-01-04 to 2026-09-01 \\
+\code{AVGO} & \code{ADI}, \code{INTC}, \code{AAPL} & semiconductors / large-cap tech hardware & 4{,}191 & same \\
+\code{GS} & \code{BAC} & money-centre / large-cap banks & 4{,}190 & same \\
+\code{CAT} & \code{HON} & capital goods / diversified industrials & 4{,}190 & same \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The drop-any-missing-date rule is a lookahead defence, not just a convenience:
+forward-filling a stale price would let the strategy trade on a value that no longer
+exists in the market (Section~\ref{sec:bt:lookahead}).
+
+\subsection{Results}
+
+\input{tables/data_section.tex}
+
+The universe by year (Table~\ref{tab:data_summary} and
+Figure~\ref{fig:universe_year}) grows from 176 names with data in 2010 to 191 in 2026 ---
+not because names were added, but because later IPOs (and later index additions) enter the
+panel mid-sample. The sector distribution (Figure~\ref{fig:sector}) is that of the large-cap
+U.S.\ market with a 2016-vintage tilt: Consumer Discretionary 85, Industrials 69,
+Information Technology 68, Financials 64, Health Care 59, Consumer Staples 37, Energy 36,
+Real Estate 29, Utilities 28, Materials 25, Telecommunications Services 5 (a sector that
+was largely reclassified into Communication Services after this membership table was
+compiled --- itself a small piece of evidence about the table's vintage).
+
+The cross-sectional median annualised volatility is \textbf{28.95\%} --- high, and
+consistent with a large-cap universe measured over a window that includes 2020 and 2022.
+
+\subsection{Survivorship bias: quantified disclosure}
+\label{sec:data:survivorship}
+
+The 195 names are those for which Yahoo returns a full or near-full history \emph{today}.
+Names delisted, acquired, or bankrupted during 2010--2026 are largely absent, so the panel
+conditions on survival to 2026. Consequences, stated plainly:
+
+\begin{enumerate}
+  \item \textbf{The universe's historical tradability is overstated.} A trader in 2012
+    could not have known which of the 2012 names would still be listed in 2026; our
+    backtest implicitly does know.
+  \item \textbf{The direction of the bias is upward.} Delistings are disproportionately
+    bad outcomes (distress, failed mergers, buyouts at a premium that ends the series).
+    Removing them removes both the disasters and the acquisition pops, but for a
+    \emph{relative-value} strategy the dominant effect is the removal of permanent
+    relationship breaks --- exactly the tail events that destroy pairs trades. Our
+    measured drawdowns are therefore optimistic.
+  \item \textbf{The membership table is a 2016-vintage snapshot.} Names added to the index
+    after 2016 are systematically excluded, which is why the panel is 195 rather than 505
+    and why \code{universe\_by\_year} plateaus at $\approx$185 rather than growing.
+  \item \textbf{Quantification available to us:} the shortfall itself. The specification
+    asked for $\ge200$ names; we deliver 195 with a documented reason
+    (\code{qa.py} reports ``195 tickers (spec target 200)''), 96.4\% of which have
+    $\ge5$ years of history and 95.9\% $\ge7$ years. Breadth is adequate for the
+    four-basket book; it is \emph{not} adequate for a 500-name universe scan, which is
+    one reason the multiple-testing audit of Phase~\ref{ch:phase10} covers 44 strategies
+    rather than thousands.
+\end{enumerate}
+
+\begin{remark}[What a fix would require]
+A survivorship-bias-free panel needs (i) point-in-time index membership (yearly constituent
+lists, e.g.\ from Wikipedia's historical S\&P 500 change tables or a vendor), joined to
+(ii) a price source that retains delisted tickers (CRSP, or a vendor's graveyard file),
+and (iii) delisting returns applied on the exit date. None of the three is obtainable in
+this sandbox. This is listed first among the non-goals of Chapter~\ref{ch:nongoals}
+because it is the limitation most likely to change the conclusions: a survivorship-free
+re-run would, we expect, lower every Sharpe reported here and lengthen every drawdown.
+\end{remark}
+
+\subsection{Honest reading}
+
+The panel is real, large enough in time (16.7 years, 4{,}190 bars per basket), correctly
+adjusted (total return), mechanically clean (10/10 QA), and fully documented with
+checksums. It is too narrow in cross-section (195 names, one vintage of membership) and
+survivorship-biased. Every later result should be read as \emph{conditional on this
+universe}, and the conditional nature is why Phase~\ref{ch:phase10} counts hypotheses
+rather than assuming the basket choices were free.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] $\ge200$ names $\times\ge10$ years: \textbf{195} names
+    $\times$16.7 years --- name target missed by 5, disclosed and explained;
+    year target exceeded by 67\%.
+  \item[\checkmark] corporate actions documented and handled (total-return
+    \code{adj\_close});
+  \item[\checkmark] no lookahead in panel construction (strict balanced export, no
+    forward fill);
+  \item[\checkmark] \code{results/tables/data\_summary.csv} written by code;
+  \item[\checkmark] survivorship analysis in the report.
+\end{itemize}

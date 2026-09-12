@@ -1,0 +1,134 @@
+% =============================================================================
+%  CHAPTER 15 -- PHASE 2: THE STATISTICAL FOUNDATION TOOLKIT
+% =============================================================================
+\section{Phase 2 --- \code{statkit}: the statistical foundation toolkit}
+\label{ch:phase2}
+
+\textbf{Reproduce it:} \code{python3 scripts/run\_statkit\_tests.py} (35 tests) and
+\code{python3 scripts/analysis/make\_statkit\_validation.py} then \code{python3
+scripts/plotting/render\_method\_validation.py}.\\
+\textbf{Math used:} all of Chapters~\ref{ch:timeseries}, \ref{ch:ou},
+\ref{ch:multipletesting}.\\
+\textbf{Artifacts:} \code{scripts/statkit/} (10 modules), \code{scripts/statkit/tests/}
+(7 files, 35 tests), \code{results/tables/statkit\_validation.csv},
+\code{report/tables/method\_validation.tex}.
+
+\subsection{Goal}
+
+Build the mathematics layer as a \emph{library}, not as inline code inside analysis
+scripts, and validate every routine on synthetic data where the truth is known. This is
+the phase that makes the rest of the project's statistics trustworthy: if the OU fit is
+wrong, every half-life in the report is wrong, and nothing downstream would reveal it.
+
+\subsection{Why validate on synthetic data}
+
+On real market data you cannot tell whether a test is broken or the market is surprising.
+On simulated data you know $\theta$, you know whether a unit root is present, you know
+whether all strategies are null. So the tests can actually fail, and a pass means
+something. Every routine in \code{statkit} has at least one such test:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{p{0.20\linewidth}p{0.30\linewidth}p{0.40\linewidth}}
+\toprule
+Module & Public API & Synthetic validation \\
+\midrule
+\code{stationarity} & \code{adf\_test}, \code{kpss\_test}, \code{interpret\_stationarity} & ADF rejects on an AR(1) with $\phi=0.8$ and fails to reject on a random walk; KPSS accepts the former and rejects the latter; the joint label produces \emph{stationary}, \emph{unit\_root} and \emph{ambiguous} on the three designed inputs \\
+\code{cointegration} & \code{engle\_granger}, \code{johansen\_rank} & two series sharing a common stochastic trend with a known hedge $\beta=2$: EG recovers $\hat\beta\approx2$ and rejects the unit root in the residual; an independent pair is not rejected; Johansen rank $\ge1$ on the cointegrated system, $0$ on the independent one \\
+\code{autocorr} & \code{durbin\_watson}, \code{ljung\_box} & DW $\approx2$ on white noise and $\approx0$ on a near-random-walk; Ljung--Box does not reject white noise and rejects an AR(1) \\
+\code{heterosk} & \code{breusch\_pagan}, \code{white\_test} & neither rejects homoskedastic noise; both reject $\sigma_t^2\propto\exp(x_t)$ \\
+\code{hac} & \code{hac\_ols}, \code{fit\_and\_compare\_se} & HAC standard errors exceed the classic ones on a positively autocorrelated residual (the direction the theory of \eqref{eq:longrunvar} requires) \\
+\code{ou} & \code{fit\_ou}, \code{half\_life} & known $\theta$ recovered; $\theta\to0$ gives an infinite half-life without dividing by zero \\
+\code{forecast} & \code{diebold\_mariano}, \code{dm\_return\_pair} & DM rejects strongly when one forecaster is genuinely better; \emph{does not} reject when the two series are identical draws (a size check, added in Phase 10) \\
+\code{bootstrap} & \code{stationary\_bootstrap}, \code{bootstrap\_ci} & geometric block lengths with the requested mean; the resampled series preserves the AR(1) autocorrelation that an i.i.d.\ bootstrap would destroy; percentile CI covers the true mean at the nominal rate on repeated experiments \\
+\code{multtest} & \code{bonferroni}, \code{white\_reality\_check}, \code{hansen\_spa} & Bonferroni on known $p$-values; Reality Check is \emph{non-significant} when all $M$ strategies are null and \emph{significant} when one is planted with a real edge \\
+\code{misspec} & \code{ramsey\_reset} & RESET does not reject a correctly specified linear model and rejects a quadratic one \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{35 tests, 35 passing} (\code{scripts/run\_statkit\_tests.py} discovers every
+\code{test\_*} function under \code{scripts/statkit/tests/} and reports a per-test
+PASS/FAIL line). The count grew from 29 in the original phase to 35 as Phases 6, 9 and 10
+added the DM return-pair size check, the RESET tests and the Reality-Check power check.
+
+\subsection{Implementation notes that matter}
+
+\paragraph{Thin wrappers where the reference implementation is better than ours.}
+\code{adfuller}, \code{kpss}, \code{johansen}, \code{het\_breuschpagan},
+\code{het\_white}, \code{acorr\_breusch\_godfrey} and \code{acorr\_lm} come from
+\code{statsmodels}; \code{statkit} wraps them with a uniform return type, normalises the
+critical-value lookup across \code{statsmodels} versions (a real portability problem:
+KPSS returns a bare tuple where ADF returns a dict --- handled in
+\code{\_normalize\_crit\_vals}), and adds the joint-interpretation logic that
+\code{statsmodels} does not provide. Writing our own Dickey--Fuller critical values would
+have been strictly worse than using a library whose tables are the published ones.
+
+\paragraph{Hand-written where no library exists.} The stationary bootstrap
+\eqref{eq:stationarybootstrap}, the White Reality Check \eqref{eq:rc:pvalue}, Hansen's
+SPA \eqref{eq:spa}, the OU regression \eqref{eq:ou:regression} and the Diebold--Mariano
+statistic \eqref{eq:dm} are implemented directly. The RC/SPA pair shares a common
+\code{\_bootstrap\_best\_perf} that recenterers the $(T,M)$ performance matrix and
+resamples rows with the stationary bootstrap; SPA adds the studentisation and the
+``not-significantly-worse'' recentering indicator. These are $\approx$40 lines each and
+are validated by the planted-edge test above --- which is the only practical way to know a
+bootstrap test is implemented with the right sign conventions.
+
+\paragraph{Determinism.} Every bootstrap routine takes an explicit \code{seed} or an
+\code{rng}, and the analysis scripts fix their seeds (\code{SEED = 11} in
+\code{compare\_multtest.py}, 1{,}200 draws). Reproducibility means bit-identical
+$p$-values on a re-run, not ``similar''.
+
+\paragraph{HAC lag rule.} The Newey--West truncation follows \eqref{eq:haclag},
+$L=\lfloor4(T/100)^{2/9}\rfloor$: 13 lags at $T=4{,}070$, 9 at $T=1{,}169$. Consistent
+across every HAC-using routine in the project, so the numbers in different tables are
+comparable.
+
+\subsection{Results: recovery on simulated data}
+
+\input{tables/method_validation.tex}
+
+Table~\ref{tab:statkit_validation} is the machine-generated record of the recovery
+checks. The ones that carry the most weight:
+
+\begin{itemize}
+  \item \textbf{OU parameter recovery.} True $\theta=0.4$, estimated $\hat\theta=0.3965$
+    ($0.9\%$ error); true half-life $\ln2/0.4=1.733$, estimated $1.748$ ($0.9\%$). The
+    half-life numbers quoted throughout Part~II rest on this.
+  \item \textbf{Cointegration recovery.} A pair constructed with a known hedge
+    $\beta=2$ and a shared random-walk trend gives $\hat\beta=1.997$ ($0.15\%$ error) and
+    an Engle--Granger ADF $p<10^{-3}$ --- the test detects the cointegration it should
+    detect, at the strength it should.
+  \item \textbf{DM sign and size.} A planted better forecaster gives $\mathrm{DM}=-19.8$,
+    $p\approx0$ (the statistic's sign convention is ``negative means model 1 is better'',
+    matching \eqref{eq:dm}); an identical pair gives $p>0.05$ (the size check added in
+    Phase 10).
+  \item \textbf{Reality Check power \emph{and} size.} With $M$ genuinely null strategies
+    the RC $p$-value is $0.208$ (correctly non-significant); with one planted edge it is
+    $0.000$ (correctly significant). A bootstrap test that only ever says ``not
+    significant'' would have passed the first check and destroyed the entire
+    Phase~\ref{ch:phase10} conclusion, so the second check is the important one.
+\end{itemize}
+
+\subsection{Honest reading}
+
+\code{statkit} is a validation layer, not a contribution to statistics: every method is
+standard and most are library calls. Its value is that the report's numbers can be traced
+to routines whose behaviour on known-truth data is checked, and that the checks include
+the \emph{size} of the tests (do they refrain from rejecting when nothing is happening?)
+as well as their power. One known gap: the bootstrap confidence-interval coverage check
+uses a modest number of replications, so the empirical coverage is itself noisy at the
+$\pm2\%$ level; that is why Chapter~\ref{ch:multipletesting} quotes bootstrap intervals
+as indicative rather than as formal confidence statements.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] every statistical routine has a passing unit test on synthetic data
+    (35/35);
+  \item[\checkmark] results reproducible (fixed seeds; \code{check.sh} re-runs the suite
+    on every build);
+  \item[\checkmark] \code{statkit} imports cleanly from any working directory (the runner
+    sets \code{sys.path} itself).
+\end{itemize}

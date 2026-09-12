@@ -1,0 +1,340 @@
+% =============================================================================
+%  CHAPTER 10 -- MULTIPLE TESTING AND DATA SNOOPING
+% =============================================================================
+\section{Multiple testing, data snooping, and what survives}
+\label{ch:multipletesting}
+
+This is the chapter that decides whether the project's results mean anything. It is also
+the one most often skipped, which is why most published backtests are wrong.
+
+\subsection{The arithmetic of searching}
+\label{sec:mt:arithmetic}
+
+Suppose you test $M$ strategies that are all pure noise, each with an independent test at
+level $\alpha$. The probability that \emph{at least one} shows a ``significant'' result is
+\begin{equation}
+  P(\text{at least one false discovery}) \;=\; 1-(1-\alpha)^{M}
+  \;\overset{\alpha M\ll1}{\approx}\; \alpha M .
+  \label{eq:familywise}
+\end{equation}
+For $\alpha=0.05$: $M=10\Rightarrow36\%$, $M=44\Rightarrow89\%$, $M=100\Rightarrow99.4\%$.
+The number audited in Phase~\ref{ch:phase10} is $M=44$ (the product of 4 baskets
+$\times$ 11 hedge configurations actually traded and reported across Phases 4--9). At
+$M=44$ a single 5\%-level ``discovery'' is worth essentially nothing.
+
+\paragraph{The expected maximum is the sharper statement.} If $t_1,\dots,t_M$ are i.i.d.\
+standard normal $t$-statistics under the null, the distribution of the maximum satisfies,
+for large $M$,
+\begin{equation}
+  \E\bigl[\max_{m\le M} t_m\bigr] \;\approx\; \sqrt{2\ln M},
+  \qquad
+  \Var\bigl[\max_m t_m\bigr] \;\approx\; \frac{\pi^2}{6\ln M},
+  \label{eq:maxnormal}
+\end{equation}
+(the Gumbel extreme-value limit; $\sqrt{2\ln M}$ comes from inverting the normal tail
+$1-\Phi(x)\approx\phi(x)/x$ at $x\approx\sqrt{2\ln M}$ where $M(1-\Phi(x))\approx1$).
+For $M=44$: $\E[\max t]\approx\sqrt{2\ln 44}=2.75$.
+
+\textbf{Now compare with what we measured.} The best of our 44 strategies has a HAC
+$t$-statistic for ``mean daily net P\&L $>0$'' of $\mathbf{1.57}$
+(Table~\ref{tab:multtest_audit}: \code{GS::OLS-w180}, net Sharpe $0.346$, mean daily net
+$1.03$\,bps, raw one-sided $p=0.059$). The expected maximum of \emph{44 pure-noise}
+strategies is $2.75$. Our best is well \emph{below} the noise benchmark.
+
+Two honest qualifications, both measured rather than assumed
+(Table~\ref{tab:power_dsr}). (i) The 44 strategies are correlated --- they share baskets,
+windows, and the same cost model --- so the \emph{effective} number of independent trials
+is smaller than 44. The mean pairwise correlation of the daily net P\&L series is only
+$0.128$, and the participation ratio of the correlation spectrum,
+$M_{\text{eff}}=(\sum_i\lambda_i)^2/\sum_i\lambda_i^2$, gives $M_{\text{eff}}=10.7$ ---
+which still implies $\E[\max t]\approx\sqrt{2\ln 10.7}=2.18$, comfortably above the
+observed $1.57$. (ii) The strategies are not exactly null: they trade real data with a
+real (if small) signal. But the direction of the comparison is unambiguous and does not
+depend on any correction methodology: \emph{the best of the searched set is not impressive
+relative to what searching produces}.
+
+\paragraph{The deflated Sharpe ratio says the same thing.} Applying
+\eqref{eq:sr0}--\eqref{eq:dsr} with $N=M=44$, cross-trial Sharpe variance estimated from
+the 44 realized Sharpers, and the best strategy's own daily P\&L moments (skewness
+$+0.473$, excess kurtosis $+13.4$ --- the fat tails of a spread book that mostly earns
+small amounts and occasionally loses large ones), the expected best annualised Sharpe
+under the null is $\mathrm{SR}_0 = 0.474$, and
+\begin{equation}
+  \mathrm{DSR} \;=\; 0.305 ,
+  \label{eq:dsr:measured}
+\end{equation}
+i.e.\ a 30.5\% probability that the true Sharpe of the best-of-44 exceeds what selection
+alone would produce --- against the conventional $>0.95$ bar. The stationary-bootstrap
+95\% percentile interval for that Sharpe is $[-0.058,\ +0.753]$, which contains zero.
+Note that the fat tails \emph{widen} the denominator of \eqref{eq:dsr} through the
+$(\hat\gamma_4-1)/4$ term, so non-normality makes the case worse, not better --- the
+opposite of the direction in which a kurtotic return series is usually (wrongly) said to
+help a Sharpe ratio.
+
+\subsection{Bonferroni and its refinements}
+\label{sec:mt:bonferroni}
+
+Boole's inequality, $P(\bigcup_m A_m)\le\sum_m P(A_m)$, immediately gives the
+\emph{family-wise error rate} (FWER) control: testing each of $M$ hypotheses at level
+$\alpha/M$ guarantees $P(\text{any false rejection})\le\alpha$. Equivalently, compare the
+raw $p$-value against $\alpha/M$:
+\begin{equation}
+  \alpha_{\text{Bonf}} \;=\; \frac{0.05}{44} \;=\; 0.001136,
+  \qquad
+  p^{\text{Bonf}}_m \;=\; \min\bigl(1,\ M\cdot p_m\bigr).
+  \label{eq:bonferroni}
+\end{equation}
+Applied to the best strategy: $p^{\text{Bonf}}=\min(1,44\times0.0587)=1.0$. Number of
+strategies surviving: \textbf{0}.
+
+Bonferroni is conservative when tests are positively correlated (which ours are), because
+Boole's inequality is tight only for disjoint events. Refinements, in increasing order of
+sophistication:
+\begin{itemize}
+  \item \textbf{Holm--Bonferroni} (step-down): order the $p$-values
+    $p_{(1)}\le\dots\le p_{(M)}$ and compare $p_{(j)}$ against $\alpha/(M-j+1)$, stopping
+    at the first non-rejection. Strictly more powerful than Bonferroni at the same FWER,
+    with no assumption about dependence. Applying it here changes nothing: the smallest
+    $p$ is $0.0587$, and the Holm bar for $j=1$ is $0.05/44=0.00114$.
+  \item \textbf{\v{S}idák}: $\alpha_{\text{\v S}}=1-(1-\alpha)^{1/M}$, exact under
+    independence, slightly less conservative than Bonferroni. Here
+    $1-0.95^{1/44}=0.00116$ --- no practical difference.
+  \item \textbf{Benjamini--Hochberg} (false \emph{discovery} rate): controls
+    $\E[\text{false rejections}/\text{rejections}]$ rather than the probability of any.
+    More powerful, appropriate when you expect many true effects and want a ranked list.
+    Here there are no rejections at all, so FDR control is moot --- but it is the right
+    tool for a 500-basket universe scan, which is why it is listed as future work.
+\end{itemize}
+
+\subsection{Bootstrap inference for dependent data}
+\label{sec:mt:bootstrap}
+
+White's Reality Check and Hansen's SPA both need the null distribution of a maximum over
+$M$ correlated series, which has no closed form. It is obtained by resampling --- but an
+i.i.d.\ bootstrap is invalid here because the daily P\&L series are autocorrelated
+(the mean reversion itself) and cross-correlated (shared baskets). Resampling individual
+days destroys the dependence and produces over-confident intervals.
+
+\paragraph{Block bootstrap.} Resample contiguous blocks of length $L$ to preserve local
+dependence. The bias: block boundaries are artificial, and the resampled series is not
+stationary.
+
+\paragraph{Stationary bootstrap} \cite{politisromano1994}, implemented in
+\code{scripts/statkit/bootstrap.py}. Choose a starting index uniformly, then at each step
+either continue to the next index (probability $1-p$) or jump to a new uniformly chosen
+index (probability $p$), wrapping around the end of the sample:
+\begin{equation}
+  i_{t+1} = \begin{cases} (i_t+1)\bmod T & \text{with probability } 1-p,\\
+  \ \ \text{Uniform}\{0,\dots,T-1\} & \text{with probability } p.
+  \end{cases}
+  \label{eq:stationarybootstrap}
+\end{equation}
+Block lengths are therefore \emph{geometric} with mean $1/p$, and --- this is the point ---
+the resampled series is \emph{strictly stationary} (its distribution is invariant to the
+starting point), unlike the fixed-block version. We use $p=1/10$, i.e.\ mean block length
+10 bars, chosen to exceed the $\approx9.4$-bar half-life of the traded spread so that a
+typical reversion episode survives intact inside a block. $B=1{,}200$ draws.
+
+\paragraph{Percentile confidence intervals.} Given bootstrap replicates
+$\hat\theta^{(1)},\dots,\hat\theta^{(B)}$ of a statistic, the percentile CI is
+$[\hat\theta^{*(\alpha/2)},\hat\theta^{*(1-\alpha/2)}]$ --- the empirical quantiles. It is
+first-order correct and requires no distributional assumption; it can undercover for
+biased statistics, in which case the \emph{basic}/pivotal interval
+$[2\hat\theta - \hat\theta^{*(1-\alpha/2)},\ 2\hat\theta-\hat\theta^{*(\alpha/2)}]$ is
+preferred. We report percentile intervals on the Sharpe ratio.
+
+\subsection{White's Reality Check}
+\label{sec:mt:whiterc}
+
+\cite{white2000realitycheck} frames the question correctly: not ``is strategy $m$ better
+than the benchmark'' for each $m$, but
+\begin{equation}
+  H_0:\ \max_{m\le M}\ \E[f_{m}] \;\le\; 0
+  \qquad\text{vs.}\qquad
+  H_1:\ \max_m \E[f_m] > 0,
+  \label{eq:rc:null}
+\end{equation}
+where $f_{m,t}$ is strategy $m$'s performance differential versus the benchmark (here,
+zero: the net daily P\&L itself). The statistic is the best observed mean,
+\begin{equation}
+  V_T \;=\; \max_{m\le M}\ \bar f_m,
+  \qquad \bar f_m = \frac1T\sum_{t=1}^T f_{m,t},
+  \label{eq:rc:stat}
+\end{equation}
+and the $p$-value is the bootstrap probability, under a \emph{recentered} null, of
+exceeding $V_T$:
+\begin{equation}
+  p \;=\; \frac{1}{B}\sum_{b=1}^{B}\mathbf 1\Bigl\{\max_m \bar f_m^{*(b)} \ \ge\ V_T\Bigr\},
+  \qquad
+  f_{m,t}^{*(b)} = \bigl(f_{m,t} - \bar f_m\bigr)^{*(b)} .
+  \label{eq:rc:pvalue}
+\end{equation}
+The recentering $f_{m,t}-\bar f_m$ is what imposes the null: it forces every strategy's
+bootstrap mean to be exactly zero while preserving the entire covariance structure across
+strategies and lags. Because the \emph{maximum} over all $M$ is recomputed in each
+bootstrap draw, the search itself is baked into the null distribution --- which is exactly
+what a per-strategy test cannot do.
+
+A technical caveat that matters for interpretation: if some strategies have
+$\E[f_m]<0$ (many of ours do, badly), recentering to zero \emph{raises} them and makes the
+null distribution of the max wider, which makes the test conservative. Hansen's SPA fixes
+this.
+
+\paragraph{Measured: $p_{\text{RC}} = 0.868$.} Not remotely significant. The bootstrap
+distribution of the best-of-44 mean P\&L under the null exceeds our observed best in 87\%
+of draws.
+
+\subsection{Hansen's Superior Predictive Ability test}
+\label{sec:mt:hansen}
+
+\cite{hansen2005test} improves the Reality Check in three ways.
+\begin{enumerate}
+  \item \textbf{Studentisation.} Divide each strategy's mean by its own standard error,
+    \begin{equation}
+      T_{\text{SPA}} \;=\; \max_{m\le M}\ \frac{\sqrt{T}\,\bar f_m}{\hat\omega_m},
+      \qquad \hat\omega_m^2 = \widehat{\mathrm{LRV}}(f_{m,t}),
+      \label{eq:spa}
+    \end{equation}
+    so that high-variance strategies do not dominate the max simply by being noisy. This
+    is a scale-invariance the Reality Check lacks.
+  \item \textbf{A consistent recentering rule.} Recenter only by strategies that are
+    \emph{not} significantly worse than the benchmark (an indicator $\mathbf 1\{\sqrt T
+    \bar f_m > -\sqrt{2\log\log T}\,\hat\omega_m\}$), which makes the test consistent
+    against alternatives while retaining correct size.
+  \item \textbf{Two variants} (``lower'' and ``upper'' bounds on the $p$-value) depending
+    on how the poorly performing strategies are treated.
+\end{enumerate}
+The SPA null is ``no strategy is superior to the benchmark''; rejecting means at least one
+is. Measured: $p_{\text{SPA}}=0.638$ --- again no rejection. Hansen's test is generally
+more powerful than White's when many irrelevant strategies are included, so the fact that
+both agree strengthens the conclusion.
+
+\subsection{Diebold--Mariano: comparing two forecasts}
+\label{sec:mt:dm}
+
+\cite{dieboldmariano1995}. Given two forecast-error series $e^{(1)}_t,e^{(2)}_t$ and a
+loss $L(\cdot)$ (squared error for forecast accuracy, or \emph{negative P\&L} for traded
+strategies), define the loss differential $d_t = L(e^{(1)}_t)-L(e^{(2)}_t)$. Under
+$H_0:\E[d_t]=0$,
+\begin{equation}
+  \mathrm{DM} \;=\; \frac{\bar d}{\sqrt{\widehat{\mathrm{LRV}}(\bar d)/T}}
+  \;\xrightarrow{\ d\ }\;\mathcal N(0,1),
+  \qquad
+  \widehat{\mathrm{LRV}}(\bar d) = \hat\gamma_0 + 2\sum_{\ell=1}^{L}w_\ell\hat\gamma_\ell ,
+  \label{eq:dm}
+\end{equation}
+with $\hat\gamma_\ell = \frac1T\sum_t (d_t-\bar d)(d_{t-\ell}-\bar d)$ and Bartlett
+weights $w_\ell=1-\ell/(L+1)$ --- the same HAC estimator as \eqref{eq:hac}, applied to the
+differential series. The HAC step is not optional: with multi-day holds and overlapping
+targets, $d_t$ is strongly autocorrelated, and using $\hat\gamma_0$ alone understates the
+variance by a factor of $1+2\sum_\ell\rho(\ell)$, which can easily be $5$--$10\times$ and
+turns a null difference into a ``significant'' one.
+
+\paragraph{Small-sample correction.} \cite{harvey1997evaluating} show the DM statistic
+over-rejects in small samples and propose multiplying by
+$\sqrt{(T+1-2h+h(h-1)/T)/T}$ for $h$-step-ahead forecasts; with $h=1$ this is
+$\approx\sqrt{(T)/T}=1$ and no correction is needed, which is our case (daily P\&L
+differentials, one-step).
+
+\paragraph{Measured: nothing is distinguishable.}
+Table~\ref{tab:multtest_dm} and Figure~\ref{fig:multtest_forest} run the DM test between
+the best ADBE hedge (Kalman $q=10^{-5}$) and every other ADBE variant. Mean daily
+differences range from $0.03$ to $0.86$ bps with HAC standard errors of $0.09$--$1.16$
+bps, giving $|\mathrm{DM}|$ between $0.04$ and $1.23$ and $p$-values between $0.22$ and
+$0.96$. \emph{Every} 95\% confidence interval spans zero. So although the smooth Kalman
+hedge beats the churny 120-bar OLS by $0.48$ bps/day --- an annualised difference of
+$\approx12$\% on \$1 gross, which is economically enormous --- sixteen years of one basket
+cannot establish it statistically. That is the power limitation of
+equation~\eqref{eq:sharpetstat}, and it is the most important sentence in this chapter.
+
+\subsection{The deflated Sharpe ratio}
+\label{sec:mt:dsr}
+
+\cite{bailey2014deflated} combine the Sharpe-ratio sampling distribution
+\eqref{eq:sharpevar2} with the extreme-value expectation \eqref{eq:maxnormal} into a
+single probability. Define the \emph{expected maximum Sharpe under the null} over $N$
+independent trials with cross-trial Sharpe variance $V[\widehat{\mathrm{SR}}]$:
+\begin{equation}
+  \mathrm{SR}_0 \;=\; \sqrt{V[\widehat{\mathrm{SR}}]}\,\Bigl[(1-\gamma)\,
+  \Phi^{-1}\Bigl(1-\tfrac1N\Bigr) + \gamma\,\Phi^{-1}\Bigl(1-\tfrac{1}{N e}\Bigr)\Bigr],
+  \qquad \gamma = 0.5772\ \text{(Euler--Mascheroni)},
+  \label{eq:sr0}
+\end{equation}
+and the \emph{deflated Sharpe ratio}, the probability that the true Sharpe exceeds
+$\mathrm{SR}_0$ given the observed estimate, its sampling error, and the non-normality of
+returns:
+\begin{equation}
+  \mathrm{DSR} \;=\; \Phi\!\left(
+  \frac{\bigl(\widehat{\mathrm{SR}}-\mathrm{SR}_0\bigr)\sqrt{T-1}}
+       {\sqrt{1-\hat\gamma_3\,\widehat{\mathrm{SR}} + \frac{\hat\gamma_4-1}{4}\,
+        \widehat{\mathrm{SR}}^{\,2}}}\right),
+  \label{eq:dsr}
+\end{equation}
+with $\hat\gamma_3$ the sample skewness, $\hat\gamma_4$ the sample (non-excess) kurtosis,
+and $\widehat{\mathrm{SR}}$ in per-period units. DSR $>0.95$ is the conventional bar for
+``this Sharpe is not a selection artifact''. Table~\ref{tab:power_dsr} reports the
+computed values for the best strategy in the audited set, with $N=M=44$ and
+$V[\widehat{\mathrm{SR}}]$ estimated as the variance of the 44 realized Sharpers.
+
+\subsection{Power: how much data would it take?}
+\label{sec:mt:power}
+
+Inverting \eqref{eq:sharpetstat} gives the sample size needed to detect a true daily
+Sharpe $\mathrm{SR}_d$ at level $\alpha$ with the critical value $z_{1-\alpha}$:
+\begin{equation}
+  T^{\ast} \;=\; \Bigl(\frac{z_{1-\alpha}}{\mathrm{SR}_d}\Bigr)^{2}
+  \;=\; \Bigl(\frac{z_{1-\alpha}\sqrt{252}}{\mathrm{SR}_a}\Bigr)^{2}\ \text{days}.
+  \label{eq:requiredT}
+\end{equation}
+This is the calculation that turns a negative result into a research programme. Applied to
+the measured numbers (Table~\ref{tab:power_dsr}: best-of-44 annualised net Sharpe
+$0.346$, daily $0.0218$; best \code{ADBE} variant $\mathrm{SR}_a=0.086$), with
+$z=1.645$ for a one-sided 5\% test and $z=3.052=\Phi^{-1}(1-0.05/44)$ for the
+Bonferroni-corrected level:
+
+\begin{itemize}
+  \item $\mathrm{SR}_a=0.346$ (the best of all 44, \code{GS::OLS-w180}):
+    $T^\ast=(1.645/0.0218)^2=5{,}695$ days $=\mathbf{22.6}$ \textbf{years} uncorrected;
+    $T^\ast=(3.052/0.0218)^2=19{,}608$ days $=\mathbf{77.8}$ \textbf{years} after
+    Bonferroni. We have 15.8.
+  \item $\mathrm{SR}_a=0.086$ (the best \code{ADBE} variant, i.e.\ the basket the bulk of
+    this report is about): $T^\ast=\mathbf{366}$ \textbf{years} uncorrected and
+    $\mathbf{1{,}259}$ \textbf{years} Bonferroni-corrected.
+\end{itemize}
+
+\begin{remark}[Honesty: the verdict, stated plainly]
+No correction methodology is needed to reach the project's conclusion; the power
+calculation alone reaches it. A single-basket, daily-frequency market-neutral spread
+strategy with a net Sharpe below $0.1$ is \emph{unfalsifiable} on any amount of historical
+data that exists: you would need 366 years of daily observations for an uncorrected
+one-sided test, and 1{,}259 years once the search over 44 configurations is paid for.
+This is not a
+defect of our analysis, it is a property of the strategy class. The implications are
+concrete and they drive Chapter~\ref{ch:conclusion}: (i) get \emph{breadth} rather than
+precision --- 500 independent baskets at $\mathrm{SR}=0.07$ each is a portfolio with
+$\mathrm{SR}=0.07\sqrt{500}=1.6$ by \eqref{eq:fundamentallaw}, testable in 5 years;
+(ii) increase frequency, where $T$ per year is 250$\times$ larger and half-lives are
+minutes rather than days; (iii) accept a lower cost base, since
+\eqref{eq:costdrag} shows cost consumes 87\% of the gross edge at the current turnover.
+\end{remark}
+
+\subsection{What would change the conclusion}
+\label{sec:mt:whatwould}
+
+The audit is only as good as its hypothesis count. Three things would legitimately change
+the verdict, and none of them is ``try more configurations'':
+\begin{enumerate}
+  \item \textbf{A pre-registered single hypothesis.} Fix the basket-construction rule,
+    the estimator, the window, the thresholds and the cost model \emph{before} looking at
+    any P\&L, then run once. $M=1$, so $\alpha=0.05$ and the bar is
+    $T^\ast\approx5{,}700$ days for $\mathrm{SR}=0.35$ --- attainable with 23 years of
+    data, or with 23 baskets over one year.
+  \item \textbf{Genuinely independent breadth.} $M$ grows, but so does $T$ in the
+    portfolio sense: 200 disjoint baskets give $\sqrt{200}=14\times$ the effective sample
+    for the \emph{book}, and the relevant test becomes one test on the book, not 200 tests
+    on its parts.
+  \item \textbf{Out-of-sample in time.} The only correction that cannot be gamed is fresh
+    data. Run the frozen configuration forward for two years and test once.
+\end{enumerate}
+Everything else --- more windows, more baskets searched post hoc, more hyper-parameter
+grids --- increases $M$ faster than it increases power.

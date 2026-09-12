@@ -1,0 +1,254 @@
+% =============================================================================
+%  APPENDIX A -- EXTENDED DERIVATIONS
+% =============================================================================
+\section{Extended derivations}
+\label{ch:derivations}
+
+Algebra that supports the main text but would interrupt it. Each subsection is
+self-contained and is referenced from the chapter that uses it.
+
+\subsection{The TSS $=$ ESS $+$ RSS decomposition}
+\label{sec:der:anova}
+
+With an intercept in $X$, $\hat\eps^{\top}\mathbf 1=0$ and $\hat\eps^{\top}\hat Y=0$.
+Proof of the second: $\hat Y=HY$ and $\hat\eps=(I-H)Y$, so
+$\hat Y^{\top}\hat\eps = Y^{\top}H(I-H)Y = Y^{\top}(H-H^2)Y = 0$ by idempotence
+\eqref{eq:hat:idem}. Then, writing $\bar Y\mathbf 1 = H\bar Y\mathbf 1$ (the ones-column is
+in $\mathcal C(X)$, so projecting a constant vector leaves it fixed),
+\[
+  \lVert Y-\bar Y\mathbf 1\rVert^2
+  = \lVert (Y-\hat Y) + (\hat Y-\bar Y\mathbf 1)\rVert^2
+  = \mathrm{RSS} + \lVert\hat Y-\bar Y\mathbf 1\rVert^2 + 2(Y-\hat Y)^{\top}(\hat Y-\bar Y\mathbf1),
+\]
+and the cross term is $\hat\eps^{\top}\hat Y - \bar Y\hat\eps^{\top}\mathbf 1 = 0-0=0$.
+This is why $R^2$ of \eqref{eq:r2} is a genuine share of variation, and why it can never
+decrease when a column is added to $X$ ($\mathcal C(X)$ grows, so $\mathrm{RSS}$ shrinks).
+
+\subsection{Variance inflation factor}
+\label{sec:der:vif}
+
+Partition $X=[X_j\ \ X_{-j}]$ and use the block inverse: the $(j,j)$ element of
+$(X^{\top}X)^{-1}$ equals $\bigl[X_j^{\top}(I-H_{-j})X_j\bigr]^{-1}$ with
+$H_{-j}=X_{-j}(X_{-j}^{\top}X_{-j})^{-1}X_{-j}^{\top}$. Now
+$X_j^{\top}(I-H_j)X_j = \mathrm{RSS}_j$, the residual sum of squares from regressing $X_j$
+on the other columns, and $\mathrm{RSS}_j=\mathrm{TSS}_j(1-R_j^2)$ by
+Section~\ref{sec:der:anova}. Hence
+$\Var(\hat\beta_j)=\sigma^2/\bigl[\mathrm{TSS}_j(1-R_j^2)\bigr]$, which is \eqref{eq:vif}.
+
+\subsection{Leave-one-out cross-validation in one fit}
+\label{sec:der:loo}
+
+For a linear smoother $\hat Y=SY$, removing observation $i$ gives
+$S^{(-i)}$ and residuals $y_i-\hat y_i^{(-i)}$. Since removing a row is a rank-1 change to
+$X^{\top}X$, Sherman--Morrison \eqref{eq:shermanmorrison} with
+$u=v=x_i$, $A=X^{\top}X$ yields after one line of algebra
+\begin{equation}
+  y_i-\hat y_i^{(-i)} \;=\; \frac{y_i-\hat y_i}{1-S_{ii}},
+  \label{eq:looidentity}
+\end{equation}
+which is the identity used in \eqref{eq:gcv}. Intuition: an observation with high leverage
+$S_{ii}\to1$ determines its own fitted value, so removing it changes the fit a lot, and the
+LOO residual must be inflated accordingly; as $S_{ii}\to1$ the LOO error diverges, which is
+the formal statement that a leverage-1 point is unvalidated by the data.
+
+\subsection{AR(1) moments and the OU correspondence}
+\label{sec:der:ar1}
+
+For $x_t-\mu=\phi(x_{t-1}-\mu)+\eta_t$ with $\lvert\phi\rvert<1$, iterating gives
+$x_t-\mu=\sum_{j=0}^{\infty}\phi^j\eta_{t-j}$, so
+$\Var=\sigma_\eta^2\sum_j\phi^{2j}=\sigma_\eta^2/(1-\phi^2)$ and
+$\gamma(\ell)=\E[(x_t-\mu)(x_{t+\ell}-\mu)]=\sigma_\eta^2\sum_j\phi^j\phi^{j+\ell}
+=\phi^{\ell}\sigma_\eta^2/(1-\phi^2)$, giving \eqref{eq:ar1}.
+
+Matching to the OU stationary covariance \eqref{eq:ou:stationary} with sampling interval
+$\Delta t$: $e^{-\theta\Delta t}=\phi$ and $\sigma^2/(2\theta)=\sigma_\eta^2/(1-\phi^2)$,
+so
+\begin{equation}
+  \theta = -\frac{\ln\phi}{\Delta t},
+  \qquad
+  \sigma^2 = -\frac{2\ln\phi}{\Delta t}\cdot\frac{\sigma_\eta^2}{1-\phi^2},
+  \qquad
+  \tau_{1/2} = \frac{\ln2}{\theta} = \frac{\ln 2}{-\ln\phi}\,\Delta t .
+  \label{eq:ar1ou}
+\end{equation}
+For $\phi$ close to 1, $-\ln\phi\approx1-\phi$, so $\theta\approx1-\phi$ and the Euler
+regression \eqref{eq:ou:regression} (which estimates $b=\phi-1$) coincides with the exact
+ML estimator. At our measured $\hat\theta=0.074$ ($\phi=0.929$) the approximation
+$-\ln\phi=0.0737$ versus $1-\phi=0.0712$ differs by $3.5\%$ --- so the reported half-life
+of $9.4$ bars carries a $\approx0.3$-bar systematic bias from the discretisation, which is
+well inside its sampling error.
+
+\subsection{Exact maximum-likelihood OU estimation}
+\label{sec:der:oux}
+
+The exact transition density from \eqref{eq:ou:moments} is
+\[
+  X_{t+1}\mid X_t \sim \mathcal N\Bigl(\mu+(X_t-\mu)e^{-\theta},\
+  \tfrac{\sigma^2}{2\theta}\bigl(1-e^{-2\theta}\bigr)\Bigr),
+\]
+so with $a=e^{-\theta}$ the log-likelihood over $T-1$ transitions is that of an AR(1) with
+coefficient $a$ and innovation variance $s^2=\frac{\sigma^2}{2\theta}(1-a^2)$. Regressing
+$X_{t+1}$ on $[1,X_t]$ gives $\hat a$, from which
+$\hat\theta=-\ln\hat a$, $\hat\mu=\hat a_0/(1-\hat a)$ and
+$\hat\sigma^2 = 2\hat\theta\,\hat s^2/(1-\hat a^2)$. This is the estimator to prefer when
+$\hat\theta$ is large (fast reversion, e.g.\ intraday spreads), and it is the reason
+\code{statkit.ou} reports both the regression coefficients and the implied
+$(\theta,\mu,\sigma,\tau_{1/2})$ so the two conventions can be compared.
+
+\subsection{Kalman steady-state gain}
+\label{sec:der:kalman}
+
+Scalar state, constant design $z_t\equiv1$: $P_{t\mid t-1}=P+Q$,
+$K=(P+Q)/(P+Q+R)$, $P'=(1-K)(P+Q)$. Steady state $P'=P$:
+\[
+  P = (P+Q) - \frac{(P+Q)^2}{P+Q+R}
+  \;\Longleftrightarrow\;
+  \frac{(P+Q)^2}{P+Q+R} = Q
+  \;\Longleftrightarrow\;
+  P^2 + 2PQ + Q^2 = QP + QR + Q^2 ,
+\]
+so $P^2 + PQ - QR = 0$ and
+\begin{equation}
+  P = \frac{-Q + \sqrt{Q^2+4QR}}{2},
+  \qquad
+  K^\ast = \frac{P+Q}{P+Q+R} = \frac{Q+\sqrt{Q^2+4QR}}{2R+Q+\sqrt{Q^2+4QR}} .
+  \label{eq:kalmansteadystate}
+\end{equation}
+Limiting behaviour, which is what Phase~\ref{ch:phase8} sweeps: as $q^2=Q/R\to0$,
+$K^\ast\to\sqrt{Q/R}=q\to0$ (the hedge freezes, effective memory $1/K^\ast\to\infty$); as
+$q\to\infty$, $K^\ast\to1$ (the hedge jumps to the new observation, memory $\to1$ bar). At
+$q=10^{-5}$, $K^\ast\approx3\times10^{-3}$ and the effective memory is $\approx300$ bars;
+at $q=10^{-2}$, $K^\ast\approx0.09$ and the memory is $\approx11$ bars --- shorter than the
+$9.4$-bar half-life of the spread, which is the quantitative form of finding K2: the filter
+absorbs the mispricing into the hedge before the trade can monetise it.
+
+\subsection{$F$-test, and RESET as a special case}
+\label{sec:der:ftest}
+
+Under normality, if the restricted model imposes $k$ linear restrictions then
+$\mathrm{RSS}_R-\mathrm{RSS}_U \sim \sigma^2\chi^2_k$ (noncentral if the restrictions are
+false) and $\mathrm{RSS}_U\sim\sigma^2\chi^2_{T-n}$, independently, because the difference
+and the unrestricted residual lie in orthogonal subspaces. Their ratio scaled by degrees of
+freedom is $F_{k,T-n}$, giving \eqref{eq:ftest}.
+
+RESET sets the restrictions $\gamma_2=\dots=\gamma_k=0$ on the coefficients of
+$\hat y^2,\dots,\hat y^k$ in the augmented regression
+(Section~\ref{sec:nonlinear:reset}). A useful equivalent form is the LM version
+$T\cdot R^2_{\text{aux}}$ of the regression of $\hat\eps$ on $[X,\hat y^2,\dots,\hat y^k]$,
+asymptotically $\chi^2_{k-1}$; \code{statkit.misspec.ramsey\_reset} computes both and the
+unit test \code{test\_reset\_f\_form\_matches\_lm\_decision} asserts they agree in decision
+on the same data --- a genuine consistency check between two asymptotically equivalent but
+numerically different statistics.
+
+\subsection{Variance of the Sharpe ratio}
+\label{sec:der:sharpevar}
+
+Write $\widehat{\mathrm{SR}}=\bar r/s$. The delta method on $g(\mu,\sigma^2)=\mu/\sigma$
+with $\nabla g=(1/\sigma,\ -\mu/(2\sigma^3))$ and the asymptotic covariance of
+$(\bar r, s^2)$, whose entries are $\sigma^2/T$, $0$ (for symmetric returns), and
+$(\mu_4-\sigma^4)/T$ with $\mu_4=\E[(r-\mu)^4]$, gives
+\[
+  T\Var(\widehat{\mathrm{SR}}) \;\to\;
+  \frac{1}{\sigma^2}\Bigl[\sigma^2 - 2\mu\cdot 0 + \frac{\mu^2}{4\sigma^4}(\mu_4-\sigma^4)\Bigr]
+  = 1 + \tfrac12\mathrm{SR}^2\bigl(\kappa-1\bigr),
+\]
+with excess kurtosis $\kappa=\mu_4/\sigma^4-3$. Including the covariance term that appears
+for skewed returns (through the third central moment $\mu_3$) yields \eqref{eq:sharpevar2}:
+\[
+  T\Var(\widehat{\mathrm{SR}}) \;\to\; 1 - \gamma_3\,\mathrm{SR} + \tfrac{\kappa+2}{4}\mathrm{SR}^2 ,
+  \qquad \gamma_3 = \mu_3/\sigma^3 .
+\]
+Substituting the measured moments of the best strategy's daily net P\&L
+($\gamma_3=+0.473$, $\kappa=+13.4$, $\mathrm{SR}_d=0.0218$, $T=3{,}979$):
+\[
+  \mathrm{se}(\widehat{\mathrm{SR}}_d) = \sqrt{\frac{1-0.473(0.0218)+\frac{15.4}{4}(0.0218)^2}{3979}}
+  = \sqrt{\frac{0.9916}{3979}} = 0.0158 ,
+\]
+i.e.\ a $t$-statistic of $0.0218/0.0158=1.38$ --- the same conclusion as the HAC test in
+Table~\ref{tab:power_dsr} ($t=1.57$; the small difference is the HAC correction for serial
+correlation, which the delta-method variance does not include) and the same verdict. The
+annualised standard error is $0.0158\sqrt{252}=0.250$ against an estimated annualised
+Sharpe of $0.346$.
+
+\subsection{Expected maximum of $M$ null statistics}
+\label{sec:der:max}
+
+For i.i.d.\ standard normals $Z_1,\dots,Z_M$, $P(\max_m Z_m\le z)=\Phi(z)^M$. The median of
+the maximum solves $\Phi(z)^M=1/2$, i.e.\ $z=\Phi^{-1}\bigl((1/2)^{1/M}\bigr)$; for large
+$M$ the mean is asymptotic to $\sqrt{2\ln M}$ with variance $\pi^2/(6\ln M)$ (the Gumbel
+limit). Sketch: $1-\Phi(z)\sim\phi(z)/z$ as $z\to\infty$, so $\E[\max]\approx z$ where
+$M\phi(z)/z\approx1$, i.e.\ $M e^{-z^2/2}/(z\sqrt{2\pi})\approx1$; taking logs,
+$\ln M - z^2/2 - \ln(z\sqrt{2\pi})\approx0$, whose leading solution is
+$z\approx\sqrt{2\ln M}$ (the $\ln z$ term gives the second-order correction
+$-\frac{\ln\ln M + \ln 4\pi}{2\sqrt{2\ln M}}$).
+
+At $M=44$: $\sqrt{2\ln 44}=2.75$; with the second-order correction, $2.75-0.31=2.44$.
+At the measured effective $M_{\text{eff}}=10.7$: $\sqrt{2\ln 10.7}=2.18$. The observed best
+HAC $t$ is $1.57$ --- below both. This is the cleanest single statement of the project's
+negative result: \emph{the best of our 44 strategies looks less impressive than the best of
+44 (or even 11) draws from pure noise would}.
+
+\subsection{The participation ratio as an effective dimension}
+\label{sec:der:participation}
+
+Given the correlation matrix $C$ of the $M$ daily P\&L series with eigenvalues
+$\lambda_1\ge\dots\ge\lambda_M\ge0$ and $\sum_i\lambda_i=M$, the participation ratio
+\begin{equation}
+  M_{\text{eff}} \;=\; \frac{\bigl(\sum_i\lambda_i\bigr)^2}{\sum_i\lambda_i^2}
+  \;=\; \frac{M^2}{\sum_i\lambda_i^2}
+  \label{eq:participation}
+\end{equation}
+counts how many directions carry the variance: $M_{\text{eff}}=M$ if all eigenvalues are
+equal (no correlation), and $M_{\text{eff}}=1$ if one eigenvalue dominates (all series
+identical up to scale). It is the inverse of the normalised Herfindahl index of the
+spectrum. Measured here: $M=44$, mean pairwise correlation $0.128$,
+$M_{\text{eff}}=10.7$ --- i.e.\ the 44 strategies behave like $\approx11$ independent bets,
+which is why the corrected expectation $\sqrt{2\ln 10.7}=2.18$ is the fairer benchmark than
+$2.75$, and why the observed $1.57$ fails against either.
+
+\subsection{VaR is not subadditive: a counterexample}
+\label{sec:der:var}
+
+Take two independent credit-like losses $L_1,L_2$, each equal to $0$ with probability
+$0.98$ and $100$ with probability $0.02$. Then
+$\mathrm{VaR}_{95\%}(L_1)=\mathrm{VaR}_{95\%}(L_2)=0$ (the 95th percentile of each is 0),
+while $L_1+L_2$ equals $0$ with probability $0.98^2=0.9604$, $100$ with probability
+$2(0.02)(0.98)=0.0392$, and $200$ with probability $0.0004$. The 95th percentile of the sum
+is $100$. So $\mathrm{VaR}_{95}(L_1+L_2)=100 > 0+0 = \mathrm{VaR}_{95}(L_1)+\mathrm{VaR}_{95}(L_2)$:
+combining two positions \emph{increased} measured risk, which no coherent measure can do.
+CVaR does not have this defect ($\mathrm{CVaR}_{95}(L_i)=4$ each, sum $8$;
+$\mathrm{CVaR}_{95}(L_1+L_2)=7.92\le8$). This is the formal reason
+Phase~\ref{ch:phase7} reports CVaR alongside VaR and interprets the CVaR improvement
+($0.00681\to0.00628$) as the meaningful one.
+
+\subsection{Water-filling: why the iterative algorithm solves it exactly}
+\label{sec:der:waterfill}
+
+The problem is: minimise $\lVert w-w^{(0)}\rVert^2$ (stay as close as possible to the raw
+inverse-vol weights) subject to $\sum_i w_i=1$, $0\le w_i\le c$. This is a projection onto
+the intersection of a simplex and a box, and its solution has the form
+$w_i=\min(c,\max(0,w^{(0)}_i-\nu))$ for a scalar $\nu$ chosen so that $\sum_i w_i=1$ ---
+the classic water-filling solution from rate-allocation theory. The iterative
+``cap and redistribute surplus proportionally'' loop in
+\code{capture\_portfolio.py::cap\_weights} converges to the same point because each
+iteration strictly reduces the number of uncapped names or the residual surplus, and the
+feasible set is compact; the guard for $c\cdot m<1$ detects the empty constraint set. With
+$m=4$ and $c=0.45$ the set is non-empty ($4\times0.45=1.8>1$) and at most two names can be
+capped simultaneously, so convergence takes at most two iterations in practice.
+
+\subsection{Cholesky and Jacobi cost, exactly}
+\label{sec:der:flops}
+
+Cholesky \eqref{eq:cholesky}: for column $j$, one square root, $(j-1)$ multiply-adds for
+the diagonal, and $(n-j)$ entries each requiring $(j-1)$ multiply-adds plus a division, so
+$\sum_{j=1}^n [1 + (j-1) + 2(n-j)(j-1) + 1] = n^3/3 + O(n^2)$ multiply-adds. For $n=4$
+that is $\approx21$ flops; for $n=5$, $\approx42$.
+
+Cyclic Jacobi \eqref{eq:jacobi}: one sweep performs $n(n-1)/2$ rotations, each costing
+$4n+O(1)$ flops to update $A$ and $2n$ to accumulate $V$, so a sweep is
+$\approx3n^2(n-1)$ flops; quadratic convergence in the final sweeps means $O(\log\log
+(1/\varepsilon))$ sweeps in practice, typically 5--8 for $n\le5$ at double precision.
+Total $\approx10^3$ flops --- still far below one memory access to DRAM in time terms
+($\approx80$\,ns $\approx240$ cycles $\approx500$ flops at 2 flops/cycle), which is why the
+PCR fit time in Table~\ref{tab:model_compare} is dominated by overhead rather than by the
+eigen-solve.

@@ -1,0 +1,502 @@
+% =============================================================================
+%  CHAPTER 2 -- PROBABILITY, RETURNS, AND STATIONARITY FROM SCRATCH
+% =============================================================================
+\section{Probability, returns, and stationarity from scratch}
+\label{ch:probability}
+
+This chapter builds the entire statistical vocabulary the rest of the book uses. If you
+already know it, skim; the notation is what matters, because every later derivation
+refers back to it.
+
+\subsection{Random variables, and the two kinds of average}
+\label{sec:prob:rv}
+
+A \emph{random variable} is a quantity whose value is not known in advance but whose
+possible values have a description. Tomorrow's return on Adobe is a random variable;
+yesterday's is a number. The description is either a \emph{probability mass function}
+(discrete outcomes) or a \emph{density} $f(x)$ (continuous outcomes), with
+$\int f(x)\dd x = 1$ and $f\ge 0$.
+
+Two averages must never be confused:
+
+\begin{description}[leftmargin=0pt,style=nextline]
+  \item[The population mean (expectation)] a property of the \emph{process}:
+    \begin{equation}
+      \mu \;=\; \E[X] \;=\; \int x\, f(x)\dd x .
+      \label{eq:expectation}
+    \end{equation}
+    You never observe it. It is a model parameter.
+  \item[The sample mean] a property of the \emph{data} you actually collected:
+    \begin{equation}
+      \bar X_T \;=\; \frac{1}{T}\sum_{t=1}^{T}X_t .
+      \label{eq:samplemean}
+    \end{equation}
+    You always observe it. It is a statistic.
+\end{description}
+
+The central activity of statistics is using the second to say something about the first,
+and quantifying how much the second would wiggle if you collected different data. That
+wiggle is the \emph{sampling distribution}, and it is the origin of every standard
+error, confidence interval, and $p$-value in this book.
+
+\subsection{Variance, covariance, correlation}
+\label{sec:prob:variance}
+
+\begin{definition}[Variance and standard deviation]
+\label{def:variance}
+$\Var(X) = \E\bigl[(X-\E X)^2\bigr] = \E[X^2]-(\E X)^2$, and
+$\sigma_X=\sqrt{\Var(X)}$.
+\end{definition}
+
+The second equality is worth deriving because it is used constantly:
+\[
+  \E\bigl[(X-\mu)^2\bigr] = \E[X^2] - 2\mu\E[X] + \mu^2
+  = \E[X^2] - 2\mu^2 + \mu^2 = \E[X^2]-\mu^2 .
+\]
+
+Variance measures dispersion in \emph{squared} units, which is why we usually quote
+$\sigma$. Two algebraic facts do most of the work in this book:
+\begin{align}
+  \Var(aX+b) &= a^2\Var(X) , \label{eq:varaffine}\\
+  \Var(X+Y) &= \Var(X)+\Var(Y)+2\Cov(X,Y) . \label{eq:varsum}
+\end{align}
+Equation~\eqref{eq:varsum} is the mathematical statement of ``diversification'': if
+$\Cov(X,Y)<0$, the sum has less variance than the sum of variances. A hedged
+stat-arb position is a sum with a deliberately negative covariance term.
+
+\begin{definition}[Covariance and correlation]
+$\Cov(X,Y)=\E[(X-\E X)(Y-\E Y)]=\E[XY]-\E X\,\E Y$, and
+\begin{equation}
+  \rho_{XY} \;=\; \Corr(X,Y) \;=\; \frac{\Cov(X,Y)}{\sigma_X\sigma_Y}\in[-1,1].
+  \label{eq:correlation}
+\end{equation}
+\end{definition}
+
+The bound $|\rho|\le1$ is the Cauchy--Schwarz inequality and it is what makes
+correlation interpretable as a unit-free ``co-movement''. Correlation is invariant to
+rescaling ($\Corr(aX+b,Y)=\sign(a)\rho$) but \emph{not} to nonlinear transformation, and
+$\rho=0$ means only ``no linear relationship'' --- two variables can be perfectly
+dependent and uncorrelated (take $X\sim\mathcal N(0,1)$, $Y=X^2$; then $\E[XY]=\E[X^3]=0$).
+
+\paragraph{Sample versions.} Given $T$ paired observations,
+\begin{equation}
+  \hat\sigma_X^2 = \frac{1}{T-1}\sum_{t=1}^{T}(X_t-\bar X)^2,
+  \qquad
+  \widehat{\Cov}(X,Y) = \frac{1}{T-1}\sum_{t=1}^{T}(X_t-\bar X)(Y_t-\bar Y).
+  \label{eq:samplevar}
+\end{equation}
+
+Why $T-1$ and not $T$? Because $\bar X$ is itself estimated from the same data, so the
+deviations $(X_t-\bar X)$ are not free: they satisfy the constraint
+$\sum_t (X_t-\bar X)=0$, leaving only $T-1$ independent pieces of information
+(\emph{degrees of freedom}). Formally, with $s^2_T = \frac{1}{T}\sum (X_t-\bar X)^2$,
+\[
+  \E[s_T^2] = \E\Bigl[\frac{1}{T}\sum X_t^2 - \bar X^2\Bigr]
+  = \frac{1}{T}\Bigl[T(\sigma^2+\mu^2)\Bigr] - \Bigl(\sigma^2/T + \mu^2\Bigr)
+  = \sigma^2\Bigl(1-\frac{1}{T}\Bigr),
+\]
+so the $\frac{1}{T}$ version \emph{under}-estimates $\sigma^2$ by a factor
+$(1-1/T)$; multiplying by $T/(T-1)$ removes the bias. The identical accounting
+reappears in regression, where the divisor becomes $T-n$ for $n$ estimated
+coefficients (Section~\ref{sec:ols:sigma2}).
+
+\paragraph{Vectors and matrices of second moments.} For a random vector
+$x\in\R^{n}$, the covariance matrix is $\Sigma=\E[(x-\E x)(x-\E x)^{\top}]\in\R^{n\times n}$:
+symmetric, with $\Sigma_{ii}=\Var(x_i)$ and $\Sigma_{ij}=\Cov(x_i,x_j)$.
+$\Sigma$ is \emph{positive semi-definite} (PSD): for any $a\in\R^n$,
+$a^{\top}\Sigma a = \Var(a^{\top}x)\ge 0$. PSD-ness is why covariance matrices have
+real non-negative eigenvalues and can be Cholesky-factorised --- the computational
+backbone of Chapter~\ref{ch:ols} and of the C++ engine.
+
+\subsection{The distributions that show up, and why}
+\label{sec:prob:distributions}
+
+\begin{description}[leftmargin=0pt,style=nextline]
+  \item[Normal] $X\sim\mathcal N(\mu,\sigma^2)$ has density
+    $f(x)=\frac{1}{\sigma\sqrt{2\pi}}\exp\!\bigl(-\frac{(x-\mu)^2}{2\sigma^2}\bigr)$.
+    It matters because of the central limit theorem, not because returns are normal
+    (they are not: they have fat tails). Sums of many small independent effects look
+    Gaussian; a daily return is a sum of thousands of individual trades.
+  \item[$\chi^2_k$] The sum of squares of $k$ independent standard normals,
+    $\sum_{i=1}^k Z_i^2\sim\chi^2_k$, with $\E=k$, $\Var=2k$. It is the distribution of
+    a \emph{variance} statistic, which is why heteroskedasticity and portmanteau tests
+    (Chapter~\ref{ch:timeseries}) have $\chi^2$ limits.
+  \item[$t_\nu$] $T=Z/\sqrt{V/\nu}$ with $Z\sim\mathcal N(0,1)$, $V\sim\chi^2_\nu$
+    independent. It is the distribution of ``estimate divided by its own estimated
+    standard error'', i.e.\ of essentially every $t$-statistic in this book. Heavier
+    tails than the normal: with $\nu=30$ the 5\% two-sided critical value is 2.04, not
+    1.96.
+  \item[$F_{k,\nu}$] The ratio of two scaled independent $\chi^2$ variables. It is the
+    distribution of ``does a group of $k$ restrictions hurt the fit?'' --- used by the
+    joint-significance test and by Ramsey's RESET test
+    (Section~\ref{sec:nonlinear:reset}).
+\end{description}
+
+\subsection{Prices, returns, and the adjustment arithmetic}
+\label{sec:prob:returns}
+
+Prices are the raw data; \emph{returns} are the economically meaningful quantity,
+because a \$200 stock is not ``bigger'' than a \$20 stock in any way that matters for
+risk.
+
+\begin{definition}[Simple and log returns]
+\begin{equation}
+  R_t \;=\; \frac{P_t}{P_{t-1}}-1,
+  \qquad
+  r_t \;=\; \log\frac{P_t}{P_{t-1}} = \log(1+R_t).
+  \label{eq:returns}
+\end{equation}
+\end{definition}
+
+Log returns are used throughout this project for three concrete reasons.
+
+\paragraph{(1) Time additivity.} Over $h$ bars,
+\begin{equation}
+  \log\frac{P_{t+h}}{P_t} \;=\; \sum_{k=1}^{h}\log\frac{P_{t+k}}{P_{t+k-1}}
+  \;=\; \sum_{k=1}^{h} r_{t+k},
+  \label{eq:logadditive}
+\end{equation}
+so multi-period log returns are \emph{sums}, and sums are what probability theory is
+good at. Simple returns are \emph{products}, $\prod(1+R_k)-1$, which is much less
+tractable.
+
+\paragraph{(2) Symmetry.} A $+10\%$ move followed by $-10\%$ leaves you at
+$1.1\times0.9=0.99$, i.e.\ $-1\%$: simple returns are not reversible. Log returns are:
+$\log 1.1 + \log 0.9 = 0$. A spread built from log prices is therefore a quantity that
+returns to zero when relative prices return to their starting configuration --- exactly
+the property a mean-reversion signal needs.
+
+\paragraph{(3) Local equivalence.} By the Taylor expansion of $\log(1+x)$ around 0,
+\begin{equation}
+  r_t \;=\; R_t - \tfrac{1}{2}R_t^2 + \tfrac{1}{3}R_t^3 - \cdots
+  \;\approx\; R_t \quad \text{for } \lvert R_t\rvert \ll 1,
+  \label{eq:logtaylor}
+\end{equation}
+and for a daily equity move ($\lvert R_t\rvert\sim 1\%$) the discrepancy is
+$\sim 0.005\%$ --- negligible relative to the 10\,bps trading cost. So nothing is lost
+by working in logs at daily frequency.
+
+\begin{remark}[Honesty: levels or returns?]
+Stat-arb spreads are usually built from \emph{log price levels}, not from returns,
+because the claim being tested is about the \emph{relative level} of two prices
+(``Adobe is expensive versus its peers''), and because the tradable object must itself
+be mean-reverting. Regressing levels on levels is statistically dangerous
+(Section~\ref{sec:prob:spurious}), which is precisely why the diagnostics of
+Chapter~\ref{ch:timeseries} exist: we must establish that the \emph{residual} of a
+levels regression is stationary before we are allowed to trade it.
+\end{remark}
+
+\paragraph{Corporate actions: why ``adjusted close''.} A 2-for-1 stock split halves the
+price and doubles the share count; the holder's wealth is unchanged. An unadjusted
+price series therefore shows a $-50\%$ ``return'' on the split date that is pure
+accounting. The multiplicative adjustment is: for a split with ratio $k$ (new shares per
+old share), all prices \emph{before} the event are divided by $k$; for a cash dividend
+$D$ paid when the price is $P$, all prior prices are multiplied by $(1-D/P)$. Yahoo's
+\code{Adj Close} applies both, so
+\begin{equation}
+  r_t^{\text{adj}} \;=\; \log\frac{P^{\text{adj}}_t}{P^{\text{adj}}_{t-1}}
+  \label{eq:totalreturn}
+\end{equation}
+is a \emph{total} return (capital gain plus reinvested dividends). A split-adjusted-only
+series gives \emph{price} returns and silently drops $\sim$1.5--2.5\%/year of dividend
+income per name --- which is why Chapter~\ref{ch:phase1} uses the Yahoo panel as primary
+and treats the split-adjusted-only NYSE/Kaggle panel as a secondary cross-check.
+
+\subsection{Stationarity: the property that makes trading possible}
+\label{sec:prob:stationarity}
+
+\begin{definition}[Strict and weak stationarity]
+A process $\{X_t\}$ is \emph{strictly stationary} if the joint distribution of
+$(X_{t_1},\dots,X_{t_k})$ equals that of $(X_{t_1+h},\dots,X_{t_k+h})$ for every shift
+$h$. It is \emph{weakly} (second-order) stationary if
+$\E[X_t]=\mu$ is constant, $\Var(X_t)=\sigma^2<\infty$ is constant, and
+$\Cov(X_t,X_{t+\ell})=\gamma(\ell)$ depends only on the lag $\ell$, not on $t$.
+\end{definition}
+
+Weak stationarity is what econometrics uses, and it is exactly what a mean-reversion
+strategy needs: a constant mean to revert \emph{to}, a constant variance to
+standardize \emph{by} (equation~\eqref{eq:saa:z}), and an autocovariance that depends
+only on how far apart two times are.
+
+\paragraph{The random walk is not stationary.} Let $X_t = X_{t-1}+\eta_t$ with
+$\eta_t$ i.i.d.\ mean zero, variance $\sigma_\eta^2$. Iterating,
+$X_t = X_0 + \sum_{s=1}^t \eta_s$, so
+\begin{equation}
+  \Var(X_t) \;=\; t\,\sigma_\eta^2 \;\longrightarrow\;\infty ,
+  \qquad
+  \Cov(X_t, X_{t+\ell}) = t\,\sigma_\eta^2 .
+  \label{eq:rwvariance}
+\end{equation}
+Both the variance and the autocovariance depend on $t$: the process has no stable
+``typical distance from the mean'', and there is no mean to revert to. Stock prices are,
+to a first approximation, random walks with drift --- which is the formal version of
+``you cannot predict the market''. We say such a series is integrated of order one,
+$I(1)$: it becomes stationary after differencing once. A series that is already
+stationary is $I(0)$.
+
+\begin{intuition}
+The whole game of statistical arbitrage, in one sentence: \emph{prices are $I(1)$, so
+find a linear combination of several $I(1)$ prices that is $I(0)$, and trade that
+combination.} Such a combination is called \emph{cointegrated}
+(Section~\ref{sec:ts:cointegration}). The residual $\eps_t$ of
+equation~\eqref{eq:basemodel} is the candidate, and Chapters~\ref{ch:timeseries}
+and~\ref{ch:ou} are devoted to testing whether it really is $I(0)$ and how fast it
+comes home.
+\end{intuition}
+
+\paragraph{Autocovariance and autocorrelation functions.} For a weakly stationary
+series, $\gamma(\ell)=\Cov(X_t,X_{t+\ell})$ and
+$\rho(\ell)=\gamma(\ell)/\gamma(0)$. The sample autocorrelation at lag $\ell$ is
+\begin{equation}
+  \hat\rho_\ell \;=\; \frac{\sum_{t=\ell+1}^{T}(X_t-\bar X)(X_{t-\ell}-\bar X)}
+                          {\sum_{t=1}^{T}(X_t-\bar X)^2}.
+  \label{eq:acf}
+\end{equation}
+Under the null of white noise, $\hat\rho_\ell$ is approximately
+$\mathcal N(0,1/T)$, so the familiar $\pm 1.96/\sqrt T$ bands on an ACF plot are not
+decoration --- they are a 5\% test per lag. The Durbin--Watson and Ljung--Box statistics
+of Section~\ref{sec:ts:autocorr} are just disciplined summaries of the same object.
+
+\subsection{Spurious regression: why levels are dangerous}
+\label{sec:prob:spurious}
+
+Take two \emph{independent} random walks $Y_t$ and $X_t$. Regress one on the other. You
+will routinely see $R^2$ above 0.5 and $t$-statistics above 3, on data generated with no
+relationship whatsoever. This is not a quirk, it is a theorem
+\cite{grangernewbold1974}: the OLS $t$-statistic diverges as $T\to\infty$
+(it grows like $\sqrt T$), so with enough data any two trending series look
+``significantly related''.
+
+The mechanism is easy to see. Both series are dominated by their accumulated trends; the
+regression matches trend to trend; the residual is the difference of two random walks,
+which is itself usually a random walk --- non-stationary, so its sample variance does
+not settle, and the usual formulas for standard errors (which assume i.i.d.\ residuals)
+are simply invalid.
+
+Two defences, and this project uses both:
+\begin{enumerate}
+  \item \textbf{Test the residual for a unit root.} If the residual of a levels
+    regression is $I(0)$, the regression is not spurious --- it is a cointegrating
+    regression. This is the Engle--Granger procedure
+    (Section~\ref{sec:ts:cointegration}).
+  \item \textbf{Work in differences/returns and accept a smaller signal.} Always valid,
+    but it throws away the level information that a mean-reversion trade needs.
+\end{enumerate}
+
+This is the reason the diagnostics chapter is not optional decoration: without it, the
+strategy's beautiful $R^2\approx0.98$ on log prices would be indistinguishable from a
+spurious regression.
+
+\subsection{Convergence: LLN, CLT, and the origin of $\sqrt T$}
+\label{sec:prob:clt}
+
+\begin{theorem}[Weak law of large numbers]
+If $X_1,\dots,X_T$ are i.i.d.\ with mean $\mu$ and finite variance, then
+$\bar X_T \xrightarrow{\ p\ } \mu$.
+\end{theorem}
+
+\begin{theorem}[Central limit theorem]
+Under the same conditions,
+\begin{equation}
+  \sqrt{T}\,(\bar X_T-\mu)\ \xrightarrow{\ d\ }\ \mathcal N(0,\sigma^2),
+  \qquad\text{equivalently}\qquad
+  \bar X_T \approx \mathcal N\Bigl(\mu,\ \frac{\sigma^2}{T}\Bigr).
+  \label{eq:clt}
+\end{equation}
+\end{theorem}
+
+Everything about statistical power follows from the $\sqrt T$ in \eqref{eq:clt}: to halve
+the standard error of an average you need \emph{four times} as much data. This is why a
+sixteen-year daily panel (4{,}190 bars) is not ``a lot of data'' for detecting a small
+daily edge. If your daily mean P\&L is $\mu_d$ with daily standard deviation
+$\sigma_d$, the $t$-statistic for ``$\mu_d>0$'' is
+\begin{equation}
+  t \;=\; \frac{\bar d}{\hat\sigma_d/\sqrt{T}}
+  \;=\; \frac{\mu_d}{\sigma_d}\sqrt{T}
+  \;=\; \frac{\text{daily Sharpe}}{1}\cdot\sqrt{T},
+  \label{eq:sharpetstat}
+\end{equation}
+so a daily Sharpe of $0.003$ (which annualizes to $\approx0.05$) needs
+$T\approx(1.96/0.003)^2\approx 427{,}000$ days --- about 1{,}700 years --- to be
+significant at 5\%. \emph{This single calculation explains the entire negative result of
+this project}, and it is quantified properly in Chapters~\ref{ch:backtestmath}
+and~\ref{ch:multipletesting}.
+
+For dependent data the CLT still holds but $\sigma^2$ must be replaced by the
+\emph{long-run variance}
+\begin{equation}
+  \sigma^2_{LR} \;=\; \gamma(0) + 2\sum_{\ell=1}^{\infty}\gamma(\ell)
+  \;=\; \lim_{T\to\infty} T\,\Var(\bar X_T),
+  \label{eq:longrunvar}
+\end{equation}
+which is what HAC estimators (Section~\ref{sec:ts:hac}) estimate. If the series is
+positively autocorrelated, $\sigma^2_{LR}>\gamma(0)$ and naive standard errors are
+\emph{too small} --- the standard way a backtest overstates its own significance.
+
+\subsection{Estimators: bias, variance, and the MSE decomposition}
+\label{sec:prob:estimators}
+
+An \emph{estimator} $\hat\theta$ is a function of the data intended to approximate an
+unknown parameter $\theta$. Being a function of random data, it is itself random.
+
+\begin{definition}[Bias, variance, MSE, consistency]
+\[
+  \operatorname{Bias}(\hat\theta)=\E[\hat\theta]-\theta,\qquad
+  \Var(\hat\theta)=\E\bigl[(\hat\theta-\E\hat\theta)^2\bigr],\qquad
+  \operatorname{MSE}(\hat\theta)=\E\bigl[(\hat\theta-\theta)^2\bigr].
+\]
+$\hat\theta$ is \emph{consistent} if $\hat\theta\xrightarrow{\ p\ }\theta$ as
+$T\to\infty$, and \emph{efficient} if it attains the smallest possible variance among
+unbiased estimators (the Cramér--Rao bound).
+\end{definition}
+
+\begin{proposition}[Bias--variance decomposition]
+\begin{equation}
+  \operatorname{MSE}(\hat\theta) \;=\; \Var(\hat\theta) + \operatorname{Bias}(\hat\theta)^2 .
+  \label{eq:biasvariance}
+\end{equation}
+\end{proposition}
+\begin{proof}
+Let $b=\E\hat\theta-\theta$. Then
+$\E[(\hat\theta-\theta)^2]=\E[(\hat\theta-\E\hat\theta + b)^2]
+=\E[(\hat\theta-\E\hat\theta)^2] + 2b\E[\hat\theta-\E\hat\theta] + b^2
+=\Var(\hat\theta)+b^2$, since the middle term is zero.
+\end{proof}
+
+\begin{intuition}
+Equation~\eqref{eq:biasvariance} is the licence to be biased. An unbiased estimator can
+have enormous variance (OLS with 100 correlated regressors and 120 observations); a
+slightly biased estimator with much smaller variance can have a lower MSE. Ridge
+regression (Chapter~\ref{ch:regularization}) is exactly this trade made deliberately:
+accept bias, buy variance, and the tuning parameter $\lambda$ is the dial between them.
+The same decomposition governs the nonlinear-vs-linear verdict of
+Chapter~\ref{ch:nonlinear}: gradient boosting has almost no bias and enormous variance
+at $T\approx3{,}000$ daily bars, and loses.
+\end{intuition}
+
+\subsection{Hypothesis testing, from nothing}
+\label{sec:prob:testing}
+
+A test has five ingredients:
+
+\begin{enumerate}
+  \item A \textbf{null hypothesis} $H_0$ (the boring, default state of the world) and an
+    \textbf{alternative} $H_1$.
+  \item A \textbf{test statistic} $\hat\tau$, a number computed from the data whose
+    distribution \emph{under $H_0$} is known or can be simulated.
+  \item A \textbf{significance level} $\alpha$ (conventionally 0.05).
+  \item A \textbf{decision rule}: reject $H_0$ if $\hat\tau$ falls in the critical
+    region $C_\alpha$, chosen so that $P(\hat\tau\in C_\alpha\mid H_0)=\alpha$.
+  \item A \textbf{$p$-value}: $p=\sup_{\theta\in H_0}P(\hat\tau \text{ at least as
+    extreme as observed}\mid\theta)$, i.e.\ the smallest $\alpha$ at which you would
+    reject.
+\end{enumerate}
+
+\begin{remark}[What a $p$-value is not]
+$p$ is \emph{not} the probability that $H_0$ is true, and $1-p$ is not the probability
+that your strategy works. It is the probability of seeing data this extreme \emph{if
+nothing were going on}. The two errors are: Type~I (reject a true null; probability
+$\alpha$, the ``false discovery'') and Type~II (fail to reject a false null;
+probability $\beta$, the ``missed discovery''). \emph{Power} is $1-\beta$, and it grows
+with effect size, with $T$, and with $\alpha$. Testing 44 strategies at $\alpha=0.05$
+guarantees roughly $44\times0.05\approx2.2$ false discoveries among the nulls --- which
+is why Chapter~\ref{ch:multipletesting} exists.
+\end{remark}
+
+\paragraph{Worked example: the one-sample $t$-test.} Data $X_1,\dots,X_T$ i.i.d.\
+$\mathcal N(\mu,\sigma^2)$; test $H_0:\mu=0$ vs.\ $H_1:\mu\ne0$. The statistic is
+\[
+  \hat\tau \;=\; \frac{\bar X}{s/\sqrt T},\qquad
+  s^2=\frac{1}{T-1}\sum(X_t-\bar X)^2 .
+\]
+Under $H_0$: $\bar X\sim\mathcal N(0,\sigma^2/T)$ so $\sqrt T\bar X/\sigma\sim\mathcal
+N(0,1)$; and $(T-1)s^2/\sigma^2\sim\chi^2_{T-1}$ independently of $\bar X$ (a special
+property of the normal family). Their ratio is therefore exactly
+$t_{T-1}$-distributed. Reject if $|\hat\tau|>t_{T-1,1-\alpha/2}$. If $\sigma$ were
+known, the statistic would be standard normal --- the entire difference between the
+normal and $t$ distributions is the price of estimating $\sigma$ from the same data.
+
+\subsection{Annualization: the $\sqrt{252}$ rule and when it lies}
+\label{sec:prob:annualization}
+
+There are $\approx252$ U.S.\ trading days per year. If daily returns were i.i.d.\ with
+mean $\mu_d$ and variance $\sigma_d^2$, then by \eqref{eq:logadditive} the annual return
+is a sum of 252 of them, so
+\begin{equation}
+  \mu_a = 252\,\mu_d,
+  \qquad
+  \sigma_a^2 = 252\,\sigma_d^2,
+  \qquad
+  \mathrm{SR}_a = \frac{\mu_a}{\sigma_a} = \sqrt{252}\,\frac{\mu_d}{\sigma_d}
+  = \sqrt{252}\,\mathrm{SR}_d .
+  \label{eq:annualization}
+\end{equation}
+That is the origin of the ``multiply the Sharpe ratio by $\sqrt{252}$'' rule.
+
+It lies when returns are autocorrelated, and the correction is worth deriving because
+it is used in Chapter~\ref{ch:multipletesting}. With autocovariances $\gamma(\ell)$,
+\[
+  \Var\Bigl(\sum_{t=1}^{252} r_t\Bigr)
+  = 252\,\gamma(0) + 2\sum_{\ell=1}^{251}(252-\ell)\,\gamma(\ell)
+  = 252\,\gamma(0)\Bigl[1 + 2\sum_{\ell=1}^{251}\Bigl(1-\frac{\ell}{252}\Bigr)\rho(\ell)\Bigr],
+\]
+so
+\begin{equation}
+  \mathrm{SR}_a \;=\; \sqrt{252}\,\mathrm{SR}_d\,\Bigl[\,1+2\textstyle\sum_{\ell\ge1}
+  \bigl(1-\tfrac{\ell}{252}\bigr)\rho(\ell)\Bigr]^{-1/2}.
+  \label{eq:loadjust}
+\end{equation}
+This is \cite{lo2002statistics}'s adjustment. Positive autocorrelation (momentum)
+inflates the naive annualized Sharpe; negative autocorrelation (mean reversion ---
+our case) \emph{deflates} it, so the naive $\sqrt{252}$ figure is conservative here.
+Since our holding period is $\approx$16--18 bars, $\rho(\ell)$ is materially non-zero
+out to lag $\sim20$, and this book reports both the naive and the caveat.
+
+\subsection{Linear algebra you will need in the next chapter}
+\label{sec:prob:linalg}
+
+\paragraph{Vectors, inner products, norms.} For $a,b\in\R^n$:
+$a^{\top}b=\sum_i a_ib_i$ (a scalar; the inner product),
+$\lVert a\rVert_2=\sqrt{a^{\top}a}$, $\lVert a\rVert_1=\sum_i\lvert a_i\rvert$,
+$\lVert a\rVert_\infty=\max_i\lvert a_i\rvert$. The three norms define the three
+geometries of Chapter~\ref{ch:regularization}: L2 (ridge), L1 (lasso), L$\infty$.
+
+\paragraph{Matrix calculus.} The two identities used over and over:
+\begin{equation}
+  \nabla_{\beta}\,(a^{\top}\beta) = a,
+  \qquad
+  \nabla_{\beta}\,(\beta^{\top}A\beta) = (A+A^{\top})\beta
+  \;\overset{A=A^{\top}}{=}\; 2A\beta .
+  \label{eq:matrixcalculus}
+\end{equation}
+Also $\nabla_\beta\lVert Y-X\beta\rVert_2^2 = -2X^{\top}(Y-X\beta)$, obtained by
+expanding $Y^{\top}Y-2\beta^{\top}X^{\top}Y+\beta^{\top}X^{\top}X\beta$ and applying
+\eqref{eq:matrixcalculus} with $A=X^{\top}X$ (symmetric).
+
+\paragraph{Eigen-decomposition and the spectral theorem.} If $A\in\R^{n\times n}$ is
+symmetric, there is an orthogonal $V$ ($V^{\top}V=I$) and a diagonal
+$\Lambda=\diag(\lambda_1,\dots,\lambda_n)$ with
+\begin{equation}
+  A \;=\; V\Lambda V^{\top} \;=\; \sum_{i=1}^n \lambda_i\, v_i v_i^{\top},
+  \qquad A v_i = \lambda_i v_i .
+  \label{eq:spectral}
+\end{equation}
+For a PSD matrix all $\lambda_i\ge0$. This decomposition is simultaneously: the
+definition of principal components (Chapter~\ref{ch:regularization}), the way ridge
+shrinkage is understood (it damps small $\lambda_i$ directions), the reason the Kalman
+covariance stays PSD, and the reason a cyclic-Jacobi eigen-solver exists in the C++
+engine (Section~\ref{sec:arch:principles}).
+
+\paragraph{Condition number.} $\kappa(A)=\lambda_{\max}/\lambda_{\min}$ for SPD $A$.
+It bounds how much the solution of $A\beta=b$ can move relative to a perturbation of
+$b$: $\lVert\delta\beta\rVert/\lVert\beta\rVert \le \kappa(A)\,\lVert\delta b\rVert/\lVert b\rVert$.
+Correlated regressors make $\kappa(X^{\top}X)$ huge, so the estimated weights swing
+wildly on tiny data changes --- the numerical face of multicollinearity, and the
+motivation for the ridge penalty $\lambda I$ that raises every eigenvalue by $\lambda$.
+
+\paragraph{Positive definiteness and Cholesky.} $A$ SPD means $a^{\top}Aa>0$ for all
+$a\ne0$; then $A=LL^{\top}$ with $L$ lower-triangular and positive diagonal, computed in
+$n^3/3$ flops without pivoting (Section~\ref{sec:ols:cholesky}). Solving
+$A\beta=b$ becomes two triangular solves, $Lz=b$ then $L^{\top}\beta=z$, each $O(n^2)$,
+and is roughly twice as fast and twice as accurate as forming $A^{-1}$ explicitly.
+\emph{We never form the inverse} --- not in the math, and not in the C++.

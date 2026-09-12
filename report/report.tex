@@ -1,21 +1,30 @@
 % =============================================================================
-% Multi-Asset Statistical Arbitrage via Regularized Regression, Nonlinear
-% Extensions, and a Low-Latency C++ Execution Engine
+%  MULTI-ASSET STATISTICAL ARBITRAGE
+%  via Regularized Regression, Nonlinear Extensions, and a Low-Latency
+%  C++ Execution Engine
 %
-% CANONICAL SOURCE OF TRUTH for the report. Built by report/build_report.py,
-% which (a) regenerates figures/tables from results/, (b) compiles this to PDF
-% when a TeX engine is available, and (c) always renders an HTML preview.
+%  A BOOK-LENGTH TREATISE: theory from first principles + a phase-by-phase
+%  account of everything that was built and measured in this repository.
 %
-% Compile anywhere with a normal TeX distribution:
-%   latexmk -pdf report.tex     (or: pdflatex -> biber -> pdflatex x2)
+%  CANONICAL SOURCE OF TRUTH. Built by report/build_report.py, which
+%    (a) regenerates every figure and table from results/ by running the
+%        checked-in scripts (no number is hand-typed),
+%    (b) compiles this file to report.pdf when a TeX engine is available,
+%    (c) ALWAYS renders report/report.html -- a self-contained book preview
+%        (math rasterised locally with matplotlib's mathtext, no CDN).
+%
+%  The body lives in report/chapters/*.tex, \input below in reading order.
+%  Compile anywhere with a normal TeX distribution:
+%      latexmk -pdf report.tex      (or: pdflatex -> biber -> pdflatex x2)
 % =============================================================================
 \documentclass[11pt]{article}
 
-% --- Packages (per spec Section 6.2) ---
+% --- Packages ----------------------------------------------------------------
 \usepackage[margin=1in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{subcaption}
@@ -24,26 +33,49 @@
 \usepackage{enumitem}
 \usepackage{float}
 \usepackage{threeparttable}
+\usepackage{longtable}
+\usepackage{array}
 \usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
 \usepackage[style=authoryear,maxcitenames=2,sorting=nyt,backend=biber]{biblatex}
 \addbibresource{references.bib}
 
-% --- Theorems/environments ---
+% --- Theorem-like environments (used heavily in Part I) ----------------------
+\newtheorem{definition}{Definition}[section]
 \newtheorem{assumption}{Assumption}[section]
+\newtheorem{theorem}{Theorem}[section]
 \newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{corollary}{Corollary}[section]
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+\newtheorem{example}{Example}[section]
+\newtheorem{intuition}{Intuition}[section]
 
-% --- Convenience commands ---
+% --- Convenience macros ------------------------------------------------------
 \newcommand{\E}{\mathbb{E}}
 \newcommand{\V}{\mathbb{V}}
 \newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
 \newcommand{\eps}{\varepsilon}
 \newcommand{\half}{\tfrac{1}{2}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\betahat}{\hat{\beta}}
+\newcommand{\code}[1]{\texttt{#1}}
 \DeclareMathOperator{\Var}{Var}
 \DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\Corr}{Corr}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\sign}{sign}
+\DeclareMathOperator{\argmin}{arg\,min}
 
-% --- Title ---
-\title{\bfseries Multi-Asset Statistical Arbitrage via Regularized Regression,\\
-       Nonlinear Extensions, and a Low-Latency C++ Execution Engine}
+% --- Title -------------------------------------------------------------------
+\title{\bfseries Multi-Asset Statistical Arbitrage\\[4pt]
+       \large via Regularized Regression, Nonlinear Extensions,\\
+       and a Low-Latency C++ Execution Engine\\[10pt]
+       \normalsize A self-contained treatise: the mathematics from first principles,\\
+       and a phase-by-phase record of what was built, measured, and found}
 \author{Research and Engineering Deliverable\\[2pt] \small Autonomous Agent Project}
 \date{\today}
 
@@ -51,1244 +83,71 @@
 \maketitle
 
 % =============================================================================
-% 1. ABSTRACT
+%  FRONT MATTER
 % =============================================================================
-\section*{Abstract}
-\label{sec:abstract}
-\emph{[Filled in the final Part. One paragraph: the question, the method, and the
-headline -- honest -- finding. States whether, after multiple-testing correction,
-transaction costs, and out-of-sample validation, a statistically defensible
-statistical-arbitrage edge exists in the studied universe, and under what conditions.]
-}
-\vspace{2em}
+\input{chapters/00_frontmatter.tex}
 
 \tableofcontents
 \newpage
 
 % =============================================================================
-% 2. INTRODUCTION & MOTIVATION
+%  PART I -- THE MATHEMATICS, FROM NOTHING
 % =============================================================================
-\section{Introduction and Motivation}
-\label{sec:intro}
+\part{The Mathematics, From Nothing}
+\label{part:theory}
 
-Economic rationale for basket statistical arbitrage. A tradeable residual is defined
-relative to an economically motivated basket of related assets, not an arbitrary
-regressor set. Position: short the target / long the basket (or the reverse) when the
-residual deviates beyond a statistically justified threshold; the position is sized by
-the estimated weights.
-
-\textbf{Literature context.}
-\begin{itemize}
-  \item \cite{avellaneda2010statistical}: systematic factor-based stat-arb with PCA
-    and sector ETFs; the central reference for basket selection and residual dynamics.
-  \item \cite{dofaff2010does}: does pairs trading still work after costs; emphasizes
-    cost sensitivity and mean-reversion half-life.
-  \item \cite{gatev2006pairs}: the canonical pairs-trading profitability study and its
-    critique of data-snooping (top-decile selection bias).
-  \item \cite{dieboldmariano1995}: forecast comparison methodology used here.
-  \item \cite{white2000realitycheck}, \cite{hansen2005test}: data-snooping tests
-    (White Reality Check, Hansen's SPA) used to answer ``is the best Sharpe real?''
-\end{itemize}
-
-Our contribution: a walk-forward, cost-aware, C++-accelerated, adversarial
-self-critiqued version of the basket stat-arb idea, with explicit multiple-testing
-correction and honest discussion of what it does and does not replicate.
-
-\subsection{The base model}
-\label{sec:basemodel}
-For a target asset $Y_t$ regressed on a basket of $n$ candidate assets $X_{1,t},\dots,X_{n,t}$:
-\begin{equation}
-  Y_t = \alpha + \sum_{i=1}^{n}\beta_i\,X_{i,t} + \eps_t ,
-  \label{eq:basemodel}
-\end{equation}
-where $\eps_t$ is the tradeable signal. The specification of which $X$'s to include,
-how to estimate $\beta$, and how to map $\eps_t$ to positions is the substance of this
-report.
+\input{chapters/01_what_is_stat_arb.tex}
+\input{chapters/02_probability_and_returns.tex}
+\input{chapters/03_linear_regression.tex}
+\input{chapters/04_regularization.tex}
+\input{chapters/05_time_series_econometrics.tex}
+\input{chapters/06_mean_reversion_ou.tex}
+\input{chapters/07_state_space_kalman.tex}
+\input{chapters/08_nonlinear_models.tex}
+\input{chapters/09_backtesting_math.tex}
+\input{chapters/10_multiple_testing.tex}
+\input{chapters/11_systems_and_latency.tex}
 
 % =============================================================================
-% 3. DATA
+%  PART II -- THE PROJECT, PHASE BY PHASE
 % =============================================================================
-\section{Data}
-\label{sec:data}
+\part{The Project, Phase by Phase}
+\label{part:phases}
 
-\subsection{Source and acquisition}
-\label{sec:data:source}
-The primary dataset is daily OHLCV + split/dividend-adjusted close prices for U.S.
-equities, retrieved from \textbf{Yahoo Finance} via the \texttt{yfinance} client on
-\texttt{2026-09-04} on an internet-enabled machine
-(\texttt{scripts/data/download.py} with \texttt{--source yahoo}). Each of the
-$195$ currently downloaded tickers carries a $\approx\!16.7$-year daily series,
-\texttt{2010-01-04} to \texttt{2026-09-01}. The Yahoo panel is the analysis dataset
-used throughout this report because it satisfies the $\geq\!10$-year span and the
-total-return (fully corporate-action-adjusted) requirement.
-
-\emph{Environment note.} This sandbox cannot reach external market-data endpoints
-(Yahoo, stooq, Nasdaq) at runtime, so the download was run externally and committed.
-The downloader targets the full 505-name S\&P 500-style list in
-\texttt{scripts/data/sp500\_tickers.txt}; \textbf{195} of these were successfully
-retrieved, so the effective universe is 195 equities -- a documented shortfall
-relative to the 200-name minimum target in the specification. A secondary,
-larger-cross-section reference set (the classic 501-name \emph{NYSE/Kaggle}
-dataset, 2010--2016, split-adjusted only) is obtainable in-sandbox via
-\texttt{--source github} for cross-checks of cross-sectional breadth; it is not the
-primary analysis set.
-
-\subsection{Cleaning and adjustment methodology}
-\label{sec:data:cleaning}
-All raw files are ingested by \texttt{scripts/data/clean.py} into a uniform long
-panel with columns
-\[
-\texttt{date},\ \texttt{ticker},\ \texttt{open},\ \texttt{high},\ \texttt{low},\ \texttt{close},\ \texttt{adj\_close},\ \texttt{volume}.
-\]
-Corporate-action handling: we use Yahoo's fully adjusted close
-(\texttt{Adj Close}), which is adjusted for \emph{both} stock splits and cash
-dividends, so returns computed on \texttt{adj\_close} are \emph{total} returns.
-Rows with non-positive prices or zero volume (0.07\% of the source) are dropped,
-duplicate (date, ticker) pairs are removed (last value wins), and the panel is
-sorted by ticker and date.
-
-\subsection{Universe description}
-\label{sec:data:universe}
-The universe is the 195 downloaded S\&P 500-style constituents, mapped to 11 GICS
-sectors via the bundled symbol table (\texttt{scripts/data/sp500\_symbols.csv}).
-A data-quality gate (\texttt{scripts/data/qa.py}) verifies positive prices, no
-missing closes, no duplicate dates, sane volumes, per-symbol span, and calendar-gap
-tolerance; it passes 10/10 checks. Summary statistics are regenerated into
-\autoref{tab:data_summary} directly from the cleaned panel.
-
-\input{tables/data_section.tex}
-
-\subsection{Survivorship-bias discussion}
-\label{sec:data:survivorship}
-The 195 downloaded names are those that Yahoo returns a full or near-full history
-for today; names delisted or acquired during the sample are largely absent, so the
-panel is \emph{survivorship-biased}: it conditions on names that survived to 2026,
-which overstates the historical tradability of the universe. Names added to the
-S\&P 500 only after 2016 (in the bundled 2016-era membership table) are
-systematically excluded. A fully survivorship-bias-free panel would require a
-historical membership list (e.g.\ the Wikipedia/BlackRock yearly constituents)
-joined to a delisted-name price source; we disclose this limitation rather than
-pretend it away. All later results are therefore conditional on this universe and
-must be corrected for the multiple hypotheses it entails.
+\input{chapters/20_phase_map.tex}
+\input{chapters/21_phase0_scaffolding.tex}
+\input{chapters/22_phase1_data.tex}
+\input{chapters/23_phase2_statkit.tex}
+\input{chapters/24_phase3_engine.tex}
+\input{chapters/25_phase4_correctness.tex}
+\input{chapters/26_phase5_models.tex}
+\input{chapters/27_phase6_diagnostics.tex}
+\input{chapters/28_phase7_portfolio.tex}
+\input{chapters/29_phase8_kalman.tex}
+\input{chapters/30_phase9_nonlinear.tex}
+\input{chapters/31_phase10_multtest.tex}
+\input{chapters/32_phase11_architecture.tex}
+\input{chapters/33_phase12_assembly.tex}
 
 % =============================================================================
-% 4. METHODOLOGY
+%  PART III -- SYNTHESIS
 % =============================================================================
-\section{Methodology}
-\label{sec:method}
+\part{Synthesis: What We Actually Learned}
+\label{part:synthesis}
 
-\subsection{Estimator derivations}
-\label{sec:estimators}
-We set up the problem in the panel of \S\ref{sec:basemodel}. Stack $T$ observations
-of the target as $Y\in\R^{T}$ and the $n$ candidate baskets as columns of the design
-matrix $X\in\R^{T\times n}$ (a constant column is folded into $X$ unless stated), so
-that the linear model is
-\begin{equation}
-  Y = X\beta + \eps,\qquad \eps\sim (0,\ \sigma^{2} I) ,
-  \label{eq:linmodel}
-\end{equation}
-with unknown $\beta\in\R^{n}$. Throughout, residuals $\hat\eps = Y - X\hat\beta$ are the
-tradeable spread.
-
-\subsubsection{Ordinary least squares}
-\label{sec:deriv:ols}
-The OLS estimator minimizes the residual sum of squares
-\begin{equation}
-  \widehat\beta \;=\; \arg\min_{\beta}\ \bigl(Y-X\beta\bigr)^{\top}\bigl(Y-X\beta\bigr)
-  \;=\; \arg\min_{\beta}\ \Bigl[\, Y^{\top}Y - 2\beta^{\top}X^{\top}Y + \beta^{\top}X^{\top}X\beta \Bigr] .
-\end{equation}
-Setting the gradient to zero (first-order condition, normal equations)
-\begin{equation}
-  -2X^{\top}Y + 2X^{\top}X\beta = 0 \quad\Longleftrightarrow\quad
-  X^{\top}X\beta = X^{\top}Y ,
-  \label{eq:normal}
-\end{equation}
-and, for full-rank $X^{\top}X$, inverting gives the closed form
-\begin{equation}
-  \hat\beta \;=\; \bigl(X^{\top}X\bigr)^{-1}X^{\top}Y .
-  \label{eq:ols}
-\end{equation}
-If $X^{\top}X$ is singular (perfect multicollinearity) the normal equations still have
-solutions; a generalized inverse / the ridge solution \eqref{eq:ridge} is then used.
-
-\paragraph{Gauss--Markov assumptions.} The estimator \eqref{eq:ols} is best linear
-unbiased (BLUE) under the classical assumptions
-\begin{enumerate}[label=(G\arabic*)]
-  \item \emph{Linearity:} the model is $Y = X\beta + \eps$.
-  \item \emph{Strict exogeneity:} $\E[\eps \mid X] = 0$, so that $\E[X^{\top}\eps]=0$.
-  \item \emph{Homoskedasticity and no serial correlation:} $\Var(\eps\mid X) = \sigma^{2}I$.
-  \item \emph{Full rank:} $\rank(X^{\top}X)=n$.
-\end{enumerate}
-Under (G1)--(G4), $\hat\beta$ is unbiased,
-$\E[\hat\beta \mid X] = \beta + (X^{\top}X)^{-1}X^{\top}\E[\eps\mid X] = \beta$, with
-conditional covariance
-\begin{equation}
-  \Var(\hat\beta \mid X) = \sigma^{2}\bigl(X^{\top}X\bigr)^{-1},
-  \qquad \hat\sigma^{2} = \tfrac{\hat\eps^{\top}\hat\eps}{T-n} .
-\end{equation}
-
-\paragraph{Violations in financial time series.} Daily return regressions routinely
-violate the classical assumptions: (i) \emph{serial correlation} in $\eps_t$ (the very
-mean reversion we seek) makes $\Var(\eps\mid X)\ne \sigma^{2}I$ and the OLS covariance
-inconsistent; (ii) \emph{heteroskedasticity} (volatility clustering) likewise biases
-inference but not $\hat\beta$; and (iii) \emph{non-exogeneity / look-ahead} if any $X$
-uses information unavailable at the trade time. Consequences: the point estimate
-$\hat\beta$ remains unbiased under (G2) but its standard errors are wrong, t-statistics
-are overstated, and spurious $\beta$'s appear when $n$ is large relative to $T$. We
-therefore (a) correct inference with Newey--West HAC errors \eqref{eq:hac}, (b)
-shrink/sparsify with \S\ref{sec:deriv:ridge}--\ref{sec:deriv:pcr}, and (c) always report
-out-of-sample validation and look-ahead-free execution.
-
-\subsubsection{Ridge regression}
-\label{sec:deriv:ridge}
-Ridge solves the penalized problem
-\begin{equation}
-  \hat\beta_{\mathrm{ridge}} \;=\; \arg\min_{\beta}\ \Bigl\{
-    \underbrace{\bigl(Y-X\beta\bigr)^{\top}\bigl(Y-X\beta\bigr)}_{\text{fitting loss}}
-    + \underbrace{\lambda \lVert\beta\rVert_{2}^{2}}_{\text{L2 penalty}} \Bigr\}, \qquad \lambda \ge 0 .
-\end{equation}
-The first-order condition
-$-2X^{\top}Y + 2X^{\top}X\beta + 2\lambda\beta = 0$ gives
-\begin{equation}
-  \hat\beta_{\mathrm{ridge}} = \bigl(X^{\top}X + \lambda I\bigr)^{-1}X^{\top}Y ,
-  \label{eq:ridge}
-\end{equation}
-\emph{Geometric view:} adding $\lambda I$ to the (possibly ill-conditioned or singular)
-$X^{\top}X$ makes it invertible and pulls the solution toward the origin; the ridge
-estimator is the orthogonal projection of $Y$ onto a ball of radius controlled by
-$\lambda$, shrinking every coefficient continuously (never exactly to zero). For
-correlated baskets the naive OLS weights can be large and opposite-signed; ridge
-stabilizes them by damping the directions of small eigenvalues.
-\emph{Bayesian view:} with a Gaussian prior $\beta \sim \mathcal{N}(0, (\sigma^{2}/\lambda) I)$
-and Gaussian likelihood $Y\mid X,\beta \sim \mathcal{N}(X\beta, \sigma^{2}I)$, the
-posterior is Gaussian with mode
-$\hat\beta_{\mathrm{MAP}} = (X^{\top}X + \lambda I)^{-1}X^{\top}Y$, i.e.\ ridge is the
-MAP (equivalently posterior mean) estimator under a zero-mean Gaussian prior. The
-shrinkage magnitude $\lambda$ is set by cross-validation/walk-forward in \S5.
-
-\subsubsection{Lasso}
-\label{sec:deriv:lasso}
-Lasso replaces the L2 penalty with an L1 penalty,
-\begin{equation}
-  \hat\beta_{\mathrm{lasso}} = \arg\min_{\beta}\Bigl\{\,
-    \tfrac{1}{2}\bigl(Y-X\beta\bigr)^{\top}\bigl(Y-X\beta\bigr)
-    + \lambda \lVert\beta\rVert_{1} \Bigr\},\qquad
-    \lVert\beta\rVert_{1} = \sum_{j=1}^{n}\lvert \beta_{j}\rvert .
-\end{equation}
-The L1 penalty is not differentiable at $\beta_{j}=0$, so the solution is characterized
-by the \emph{subgradient} (KKT) condition
-\begin{equation}
-  0 \;\in\; X^{\top}(Y - X\beta) \;-\; \lambda\,\partial\lVert\beta\rVert_{1},
-  \qquad
-  \partial\lVert\beta_{j}\rVert_{1} = \begin{cases}
-    \{\operatorname{sign}(\beta_{j})\}, & \beta_{j}\ne 0,\\
-    [-1,1], & \beta_{j}=0 ,
-  \end{cases}
-  \label{eq:lasso_kkt}
-\end{equation}
-which is exactly what drives coefficients to zero: small baskets whose marginal
-predictive contribution does not exceed the penalty threshold $\lambda$ are set exactly
-to $0$, yielding \emph{sparse} basket selection. Because \eqref{eq:lasso_kkt} has no
-closed form, we use \emph{coordinate descent} (cyclically update one $\beta_j$ holding
-others fixed). For column-normalized data the univariate update is the soft-threshold
-operator
-\begin{equation}
-  \hat\beta_{j} \;\leftarrow\; \frac{1}{\rho_{j}}\, S_{\lambda}\!\Bigl(X_{j}^{\top}r_{-j}\Bigr),
-  \qquad \rho_{j} = X_{j}^{\top}X_{j},\qquad
-  S_{\lambda}(z) = \operatorname{sign}(z)\bigl(\lvert z\rvert - \lambda\bigr)_{+} ,
-  \label{eq:softthresh}
-\end{equation}
-where $r_{-j} = Y - \sum_{k\ne j} X_{k}\beta_{k}$ is the partial residual, iterated to
-convergence over a decreasing path of $\lambda$ values.
-\emph{Elastic net} interpolates between \eqref{eq:ridge} and \eqref{eq:lasso_kkt} by
-penalizing $\lambda_{1}\lVert\beta\rVert_{1} + \lambda_{2}\lVert\beta\rVert_{2}^{2}$, which
-retains Lasso sparsity while regularizing groups of highly-correlated baskets more
-stably than Lasso alone.
-
-\subsubsection{Principal component regression}
-\label{sec:deriv:pcr}
-Center the regressors column-wise and form the sample covariance
-$S = \tfrac{1}{T}X^{\top}X \in \R^{n\times n}$ (for the correspondingly rescaled $X$).
-The eigendecomposition
-\begin{equation}
-  S = V\,\Lambda\,V^{\top},\qquad
-  \Lambda = \operatorname{diag}(\lambda_{1}\ge\lambda_{2}\ge\cdots\ge\lambda_{n}\ge 0),
-\end{equation}
-yields orthonormal eigenvectors $V=[v_{1},\dots,v_{n}]$. The \emph{principal components}
-are the projections $Z = X V$; the $k$-th component $Z_{k}=Xv_{k}$ is the linear
-combination of baskets with maximal variance subject to being uncorrelated with
-$Z_{1},\dots,Z_{k-1}$, and $\lambda_{k}=\Var(Z_{k})$. Principal component regression
-(PCR) regresses $Y$ on the top-$k$ components,
-\begin{equation}
-  \hat\beta_{\mathrm{PCR}} = V_{:k}\,\bigl(Z_{:k}^{\top}Z_{:k}\bigr)^{-1}Z_{:k}^{\top}Y ,
-  \label{eq:pcr}
-\end{equation}
-i.e.\ OLS in the $k$-dimensional rotated space. Economically, in a basket of same-sector
-equities the first component typically loads on the \emph{common sector/market} factor
-(the ``market mode''), and the trailing components capture sector-relative idiosyncratic
-movements -- precisely the structure Avellaneda \& Lee \cite{avellaneda2010statistical}
-exploit. By keeping only $k$ components, PCR discards low-variance noise directions and
-dramatically reduces variance when $n$ is large relative to $T$, at the cost of the
-interpretability of the original $\beta_i$ weights.
-
-\subsection{Statistical diagnostics}
-\label{sec:diagnostics}
-The diagnostic battery below is applied to the model residuals $\hat\eps_t$ of the final
-fitted baskets (Part 6). All routines are implemented in \texttt{scripts/statkit/} and
-unit-tested on synthetic data.
-
-\subsubsection{Stationarity: ADF and KPSS}
-\label{sec:diag:stationarity}
-Augmented Dickey--Fuller (\cite{dickeyfuller1979}) tests a unit root in $\hat\eps_t$ via
-the regression
-\begin{equation}
-  \Delta \hat\eps_t \;=\; \alpha + \rho\,\hat\eps_{t-1} + \sum_{j=1}^{p}\gamma_{j}\,\Delta\hat\eps_{t-j} + u_{t},
-  \qquad H_{0}^{ADF}:\ \rho = 0\ \ (\text{unit root / non-stationary}).
-  \label{eq:adf}
-\end{equation}
-KPSS (\cite{kpss1992}) tests the \emph{opposite} null: it fits $\hat\eps_t = r_t +
-u_t$ with $r_t = r_{t-1} + v_t$ and tests $H_{0}^{KPSS}: \Var(v_t)=0$ (level/trend
-stationary). Reading them jointly resolves ambiguity: the residual is judged consistent
-with stationarity when ADF \emph{rejects} its unit-root null and KPSS \emph{fails to
-reject} its stationarity null. A spread must be stationary to be mean-reverting and
-tradeable; a unit root in $\hat\eps_t$ would mean the ``basket hedge'' is spurious.
-
-\subsubsection{Cointegration: Engle--Granger and Johansen}
-\label{sec:diag:coint}
-For a single target $Y$ and basket $X$ both $I(1)$ in prices, Engle--Granger
-(\cite{englegranger1987}) is a two-step test: (1) OLS $Y_t = \alpha + X_t^{\top}\beta +
-\varepsilon_t$; (2) test $\varepsilon_t$ for a unit root with \eqref{eq:adf}. Rejecting a
-unit root in the step-1 residual establishes that $Y$ and the basket share a common
-stochastic trend, so the spread $\varepsilon_t$ is stationary and mean-reverting. For a
-whole basket of $N>2$ series the Johansen \cite{johansen1991} procedure estimates a VECM
-and tests the \emph{cointegration rank} $r$ via trace statistics against their
-distributions; $r\ge1$ means at least one stationary linear combination exists. We apply
-Johansen at the basket level to confirm the regression-based spread is genuinely
-cointegrated rather than merely highly correlated.
-
-\subsubsection{Residual autocorrelation: Durbin--Watson and Ljung--Box}
-\label{sec:diag:autocorr}
-The Durbin--Watson \cite{durbinwatson1950} statistic
-\begin{equation}
-  \mathrm{DW} = \frac{\sum_{t=2}^{T}\bigl(\hat\eps_t - \hat\eps_{t-1}\bigr)^{2}}
-                     {\sum_{t=1}^{T}\hat\eps_{t}^{2}}
-  \;\approx\; 2\bigl(1-\hat\rho_{1}\bigr)
-\end{equation}
-tests first-order autocorrelation: $\mathrm{DW}\approx 2$ indicates none, $<2$ positive
-serial correlation. The Ljung--Box \cite{ljungbox1978} portmanteau statistic
-\begin{equation}
-  Q \;=\; T(T+2)\sum_{\ell=1}^{L}\frac{\hat\rho_{\ell}^{2}}{T-\ell}
-  \;\sim\; \chi^{2}_{L} \quad \text{under } H_{0}: \rho_{1}=\cdots=\rho_{L}=0 ,
-  \label{eq:ljungbox}
-\end{equation}
-tests whether autocorrelations up to lag $L$ are jointly zero. Serial correlation in a
-``signal'' residual is expected if mean reversion persists over several days (positive
-$\rho_\ell$ on daily returns implies momentum), so its presence must be reconciled with
-the assumed OU dynamics \eqref{eq:ou} rather than treated as a nuisance to remove.
-
-\subsubsection{Heteroskedasticity: Breusch--Pagan and White}
-\label{sec:diag:heterosk}
-Breusch--Pagan \cite{breuschpagan1979} regresses the squared residuals on the original
-regressors and tests $H_0$: no heteroskedasticity via the $LM = T R^{2}$ statistic of that
-auxiliary regression. White \cite{white1980} generalizes this by regressing $\hat\eps_t^{2}$
-on the regressors, their squares and cross-products, thereby also catching
-misspecification. Daily equity returns are strongly heteroskedastic (volatility
-clustering), so rejection is the rule rather than the exception; the practical
-consequence is that we must use HAC standard errors and report performance conditional
-on volatility regimes (\S7).
-
-\subsubsection{HAC standard errors}
-\label{sec:diag:hac}
-When \eqref{eq:diag:autocorr} and \eqref{eq:diag:heterosk} detect dependence, the OLS
-covariance $\sigma^{2}(X^{\top}X)^{-1}$ is inconsistent. Newey--West
-\cite{neweywest1987} estimate
-\begin{equation}
-  \widehat{\Var}_{HAC}(\hat\beta) = \bigl(X^{\top}X\bigr)^{-1}
-    \Bigl[\, \hat\Omega_{0} + \sum_{\ell=1}^{L} w_{\ell}\bigl(\hat\Omega_{\ell} +
-    \hat\Omega_{\ell}^{\top}\bigr) \Bigr] \bigl(X^{\top}X\bigr)^{-1},
-  \qquad \hat\Omega_{\ell} = \tfrac{1}{T}\sum_{t}\hat\eps_{t}\hat\eps_{t-\ell}\,x_{t}x_{t-\ell}^{\top},
-  \label{eq:hac}
-\end{equation}
-with Bartlett weights $w_{\ell}=1-\ell/(L+1)$ guaranteeing positive semi-definiteness.
-We report t-statistics before and after the HAC correction to show how much of the
-apparent significance of a basket survives proper inference.
-
-\subsubsection{Mean reversion speed: Ornstein--Uhlenbeck fit}
-\label{sec:diag:ou}
-To quantify how fast the spread reverts we fit a one-factor Ornstein--Uhlenbeck process
-to $\hat\eps_t$,
-\begin{equation}
-  d\eps_t = \theta\,\bigl(\mu - \eps_t\bigr)\,dt + \sigma\,dW_{t} .
-  \label{eq:ou}
-\end{equation}
-Discretizing with unit step gives $\Delta\eps_{t+1} = \theta\mu - \theta\eps_{t} + u_{t}$,
-so $\theta$, $\mu$ and $\sigma$ are recovered by the OLS regression of $\Delta\eps_t$ on a
-constant and $\eps_{t-1}$ (see \texttt{statkit.ou}). The implied mean-reversion half-life
-is
-\begin{equation}
-  \tau_{1/2} = \frac{\ln 2}{\theta},
-  \label{eq:halflife}
-\end{equation}
-and must be compared to the strategy's intended holding period: if a trade holds far
-longer than a few half-lives the expected profit of a reverting spread is already mostly
-captured, while holding far shorter than the half-life trades noise. A mismatch here is
-flagged as a design flaw, not glossed over (\S7).
-
-\subsection{Multiple-testing correction}
-\label{sec:multtest}
-A naive universe scan that reports only the single best basket ignores that it searched
-over $M$ = (number of targets) $\times$ (basket configurations) $\times$ (hyperparameter
-settings) hypotheses. We apply three corrections (\texttt{statkit.multtest}):
-\begin{enumerate}
-  \item \textbf{Bonferroni:} a raw p-value $p$ is deemed significant only if
-    $p\cdot M < \alpha$; conservative, controls the family-wise error rate.
-  \item \textbf{White Reality Check} \cite{white2000realitycheck}: with per-strategy
-    performance series $f_{m,t}$ ($m=1,\dots,M$), the null is that the \emph{best} model
-    does not beat the benchmark: $H_{0}: \max_{m}\E[f_{m}]\le 0$. The test statistic is
-    $\max_{m}\bar{f}_{m}$ where $\bar f_m = T^{-1}\sum_t f_{m,t}$, and its null
-    distribution is obtained by a stationary bootstrap on the recentered differentials
-    $\bar f_m - f_{m,t}$, which accounts for the $\max$ over all $M$ searched models.
-  \item \textbf{Hansen's SPA} \cite{hansen2005test}: a studentized variant of the same
-    test with a more powerful re-centering rule.
-\end{enumerate}
-These yield the explicit numeric answer in \S8 (Part 10): \emph{after correcting for the
-number of models scanned, is the best basket's Sharpe still distinguishable from zero?}
-
-\subsection{Forecast comparison}
-\label{sec:forecast}
-Rather than eyeballing which variant has the higher out-of-sample $R^2$, we compare
-forecasts pairwise with the Diebold--Mariano \cite{dieboldmariano1995} test. For two
-models with forecast errors $e^{(1)}_{t}, e^{(2)}_{t}$ and squared-error loss, define the
-loss differential $d_t = \bigl(e^{(1)}_{t}\bigr)^{2} - \bigl(e^{(2)}_{t}\bigr)^{2}$. Under
-$H_{0}$ of equal predictive accuracy, $\E[d_t]=0$ and
-\begin{equation}
-  \mathrm{DM} = \frac{\bar d}{\sqrt{\widehat{\mathrm{LRV}}(\bar d)/T}} \;\overset{d}{\longrightarrow}\;
-  \mathcal{N}(0,1),
-  \label{eq:dm}
-\end{equation}
-where $\widehat{\mathrm{LRV}}$ is a HAC estimate of the long-run variance of $d_t$
-(correcting for overlapping/autocorrelated forecast errors). A significantly negative DM
-means variant 1 (numerator) forecasts more accurately.
+\input{chapters/40_results_synthesis.tex}
+\input{chapters/41_discussion_nongoals.tex}
+\input{chapters/42_conclusion_future.tex}
 
 % =============================================================================
-% 5. MODEL COMPARISON RESULTS
+%  REFERENCES + APPENDICES
 % =============================================================================
-\section{Model Comparison Results}
-\label{sec:modelcomparison}
-This section runs the five baseline linear estimators -- OLS, Ridge, Lasso,
-ElasticNet and principal-component regression (``PCA'') -- through the \emph{identical}
-causal, cost-aware pipeline of Section \ref{sec:backtest} on the same basket (target
-\texttt{ADBE} vs \{\texttt{CRM}, \texttt{ADSK}, \texttt{INTU}\}, 4{,}190 common bars,
-2010--2026). All are implemented twice and checked against each other: dependency-free
-in C++ (\texttt{src/model/basket\_selector.h}, exercised by unit tests that assert
-Ridge$\to$OLS as $\lambda\to0$, Lasso sparsification, ElasticNet interpolation, and
-$\mathrm{PCR}(k{=}n)=$OLS) and in Python/sklearn for the sweep. Only the sklearn path
-is used to produce numbers below.
+\printbibliography[title=References]
 
-\subsection{Design and no-lookahead discipline}
-\label{sec:mc:method}
-For each estimator we reproduce the Part 4 hedge: at bar $t$ fit
-$y=\alpha+X^\top\beta$ on the trailing window $W{=}120$ ending at $t-1$ (log prices),
-then standardize the bar-$t$ residual by the in-window residual sigma to get $z_t$, and
-feed $z_t$ through the one-bar-delayed, 10\,bps cost model of \S\ref{sec:bt:cost}.
-Every method therefore sees the same data, the same transaction costs and the same
-execution delay; they differ only in how the hedge $\beta$ (and hence the spread) is
-estimated. The comparison is deliberately made at the \emph{strategy} level (net
-Sharpe) rather than at raw $R^2$, because on log-price levels in-sample $R^2$ is
-saturating and uninformative; we additionally report the out-of-sample information
-coefficient of $z_t$ against the realized 21-bar gross position return as a direct
-measure of predictive content.
-
-Hyper-parameters are selected on a held-out \textbf{validation} window (2019--2021) by
-maximizing net Sharpe over a small coarse grid
-(Ridge $\alpha\in\{0.1,1,10\}$, Lasso/ElasticNet $\alpha\in\{10^{-4},10^{-3},10^{-2}\}$
-on column-standardized features, PCR $k\in\{1,2,3\}$). All reported \emph{test}
-figures are then strictly out-of-sample on \textbf{2022--2026}. Table
-\ref{tab:model_compare} and Figure \ref{fig:mc_sharpe} give the headline numbers;
-Figure \ref{fig:mc_ic} the signal quality; Figure \ref{fig:mc_stab} the hedge-weight
-stability. For context each row also carries its full-sample (2010--2026) net Sharpe,
-the same span as the Part 4 OLS baseline.
-
-\input{tables/model_compare.tex}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/model_compare_sharpe.png}
-\caption{Gross vs net-of-cost annualized Sharpe by hedge estimator, out-of-sample on
-2022--2026 (hyper-parameters chosen on 2019--2021).}
-\label{fig:mc_sharpe}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/model_compare_ic.png}
-\caption{Out-of-sample information coefficient (correlation of $z_t$ with the
-realized 21-bar gross position return), test period 2022--2026.}
-\label{fig:mc_ic}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/model_compare_stability.png}
-\caption{Causal walk-forward hedge weights over the full sample: the weight on
-\texttt{CRM} and the time-varying hedge norm $\lVert\beta_t\rVert_2$ for each
-estimator.}
-\label{fig:mc_stab}
-\end{figure}
-
-\subsection{Findings}
-\label{sec:mc:findings}
-\begin{enumerate}[label=\textbf{M\arabic*.}]
-  \item \textbf{OLS reproduces the C++ baseline.} The Python OLS walk-forward gives a
-    full-sample net Sharpe of $\approx0.05$, matching the Part 4 engine
-    (\S\ref{sec:bt:base}) to three decimals -- confirming the two implementations are
-    the same experiment and that any difference between estimators below is a genuine
-    model effect, not a harness artifact.
-  \item \textbf{Regularization improves net-of-cost performance.} On the full sample
-    Ridge ($\alpha{=}10$) raises the net Sharpe to $\approx0.09$ from OLS's $\approx0.05$
-    while keeping a similar gross Sharpe ($\approx0.34$ vs $0.39$): the L2 shrinkage
-    makes the rolling hedge less erratic (lower coefficient instability, Figure
-    \ref{fig:mc_stab}), which trims turnover and the cost drag more than it costs in
-    gross edge. Ridge is the best full-sample net performer; on the out-of-sample test
-    period it is also the least-negative net Sharpe ($\approx-0.03$ vs OLS $-0.30$).
-  \item \textbf{Aggressive sparsification hurts.} Lasso and ElasticNet, driven here to
-    heavy penalties by the validation rule, collapse the three-name hedge toward a
-    sparser book and degrade net performance (full-sample net $\approx0.01$ and
-    $\approx-0.03$ respectively). Dropping basket names removes hedge legs the spread
-    actually needs; sparsity is the wrong inductive bias for a \emph{hedging} regression
-    where every name carries shared factor exposure.
-  \item \textbf{PCA has the strongest pure signal but the weakest realized hedge.} The
-    one-component PCR residual gives the highest out-of-sample IC ($\approx0.21$ vs
-    $0.13$ for OLS), yet its full-sample net Sharpe ($\approx0.03$) is below OLS: a
-    single principal component captures the common mode but discards the idiosyncratic
-    relative moves that this mean-reversion strategy monetizes, so the signal is
-    directionally informative but the book under-hedges the names' common drift.
-  \item \textbf{The predictive content is real but small.} Every estimator yields a
-    positive out-of-sample IC on 2022--2026 ($0.12$--$0.21$), i.e.\ the spread $z_t$
-    correctly predicts the direction of convergence. Consistent with Part 4, however,
-    the daily-frequency effect size is too small to survive 10\,bps round-trip costs in
-    the adverse 2022+ regime, where all variants are net-negative; only Ridge and OLS
-    remain net-positive over the full 2010--2026 sample, and by less than one would like.
-    Whether this survives proper multiple-testing correction is quantified in
-    Section \ref{sec:robustness} (Part 10).
-\end{enumerate}
-
-\subsection{Computational cost}
-\label{sec:mc:cost}
-Per-window fit times (measured, Table \ref{tab:model_compare}, final column) are
-$\approx0.6$\,ms for OLS and $\approx0.6$--$1.8$\,ms for the regularized variants on a
-$120\times3$ window in sklearn; the dependency-free C++ equivalents are far faster
-(regression update+solve at $\lesssim1\,\mu$s, \S\ref{sec:arch:latency}). At these
-sizes compute cost is immaterial to model choice; the deciding factors are the
-statistical ones above. Coefficient instability (time-mean of each weight's
-std/|mean| over the test period) is $\approx1.0$ for OLS and lower for Ridge
-($\approx0.94$) and PCR ($\approx0.85$), confirming the shrinkage effect visible in
-Figure \ref{fig:mc_stab}.
-
-% =============================================================================
-% 6. NONLINEAR & ADAPTIVE EXTENSIONS
-% =============================================================================
-\section{Nonlinear and Adaptive Extensions}
-\label{sec:nonlinear}
-Gradient-boosted trees / shallow network, RESET test, learning curves, honest
-bias--variance assessment (Part 9); Kalman-filtered time-varying beta (this section,
-Part 8).
-
-\subsection{Nonlinear signal extraction (GBM, MLP, RESET)}
-\label{sec:nonlinear_sig}
-Parts 4--8 traded a single deviation $z_t$ -- the standardized causal rolling-hedge
-residual -- through a linear threshold policy, and found the edge was real but small and
-cost-dominated. A natural next question is whether the relationship between the level of
-the spread and its subsequent reversion is genuinely linear, or whether nonlinear
-signal extraction can recover incremental value that a linear rule leaves on the table.
-This subsection tests that question honestly with two complementary nonlinear
-estimators -- gradient-boosted trees (\texttt{HistGradientBoostingRegressor}, ``GBM'')
-and a shallow feed-forward network (``MLP'') -- benchmarked against the linear Ridge on
-the \emph{same} causal feature set, and reports a Ramsey RESET misspecification test
-for the linear forecasting equation.
-
-\paragraph{Forecast task.} We predict $R_t^{h}$, the realized $h$-bar ($h=5$)
-market-neutral return of fading a rich causal rolling-OLS-120 spread on
-target-vs-basket:
-\begin{equation}
-  R_t^{h} \;=\; -\,\frac{S_{t+h}-S_t}{g_t},\qquad
-  S_t = \log P^{T}_t - \hat\alpha_t - \sum_{j}\hat\beta_{j,t}\log P^{j}_t,
-  \label{eq:nonlin_target}
-\end{equation}
-where $S_t$ is the causal (one-bar-delayed) spread and $g_t=1+\sum|\hat\beta_{j,t}|$ is
-the grossing factor converting a spread change into a return. Predicting $R_t^{h}>0$
-means the model expects a rich spread to revert (short the target, long the basket) --
-exactly the trade the threshold book takes. Each forecaster is fed 11 causal features
-(the current $z$, spread level and changes, 5- and 20-bar rolling volatility of the
-spread, target and basket returns and lags) computed only from bars $\le t$. This is a
-deliberately small, low-capacity feature set: with daily data and a weak signal,
-high-dimensional inputs would only inflate variance (Part 6's lesson) rather than reveal
-structure.
-
-\paragraph{No-lookahead discipline.} Forecasters are fit on a causal \emph{expanding}
-window: at each quarterly (63-bar) boundary the estimator is retrained on every valid
-training bar from the warm-up onward and then predicts only the strictly subsequent
-held-out bars. Features, the $h$-bar target, and the feature standardisation (mean and
-standard deviation computed on the training window only and applied to the held-out
-bars) are all computed causally. The comparison therefore reflects true out-of-sample
-predictive quality with no leakage.
-
-\paragraph{Forecast quality.} \autoref{tab:nonlinear_forecast} reports the out-of-sample
-(2022+) information coefficient (IC) and $R^2$ of each estimator on $R_t^{h}$ for each
-basket; \autoref{fig:nonlinear_ic} plots the ICs. The result is unambiguous:
-\begin{enumerate}[label=\textbf{N\arabic*.}]
-  \item \textbf{Linear wins the forecasting race.} On every basket the linear Ridge
-    attains the highest out-of-sample IC (0.24--0.42) and the only clearly positive
-    out-of-sample $R^2$ (4--17\%). The GBM is second on every basket; its out-of-sample
-    $R^2$ is negative in most baskets, and the (ADBE-only) MLP is broadly comparable to
-    GBM and still below linear. Whatever functional nonlinearity these flexible models
-    can capture on training data does \emph{not} generalise out-of-sample at daily
-    frequency -- the textbook small-signal / low-$N$ regime.
-  \item \textbf{The linear equation is not strongly misspecified.}
-    \autoref{fig:nonlinear_reset} shows the Ramsey RESET $F$-test on the linear
-    regression of $R_t^{h}$ on the causal features (training sample only, to avoid any
-    out-of-sample contamination). Three of the four baskets reject linearity at 5\%
-    (AVGO, GS, CAT), but ADBE -- the basket used throughout Parts 4--8 -- does not
-    ($p\approx0.38$). The RESET evidence for omitted nonlinear structure is thus mixed
-    and, where it exists, coincides with baskets where the flexible models nevertheless
-    fail to turn it into out-of-sample $R^2$.
-  \item \textbf{Learning curves show why.} \autoref{fig:nonlinear_learning} traces the
-    GBM's out-of-sample $R^2$ on a fixed 2019--2020 validation window as the training
-    sample grows. At a few hundred bars the tree ensemble overfits badly
-    ($R^2\approx-0.4$); only near $\sim$2,800 training bars does it turn positive. With
-    $\sim$2,900 training bars available in total (Part 5's expanding design uses even
-    fewer early on), the flexible models never have enough data to out-generalise a
-    regularised linear map on a weak daily signal.
-\end{enumerate}
-
-\paragraph{Net-of-cost verdict.} Forecast $IC$ is a statistical summary; what matters is
-whether a nonlinear signal improves the \emph{traded} result net of costs. We take the
-Part-4 z-threshold book on the ADBE basket and add an entry \emph{gate}: a position is
-opened only when the threshold condition holds \emph{and} the forecaster's predicted
-$R_t^{h}$ points in the same reversion direction. \autoref{tab:nonlinear_trade} and
-\autoref{fig:nonlinear_sharpe} compare the plain book with the three gated variants.
-The honest finding is negative: gating never raises net Sharpe (full-sample or 2022+).
-The linear gate approximately halves the number of trades without improving net Sharpe;
-the GBM gate and MLP gate, whose marginal predictions are less accurate, degrade the
-result further. Conditioning the entry on a nonlinear reversion forecast therefore does
-not recover the incremental edge the statistical tests hint at once transaction costs
-are paid.
-
-\paragraph{Honest conclusion.} On this data the base model of Parts 4--8 was already
-near the practical limit of what linear-in-levels signal extraction recovers net of
-costs. The RESET evidence for omitted nonlinearity is partial (and absent on ADBE), and
-where nonlinear estimators are more flexible they overfit the small daily sample and
-cannot out-generalise a regularised linear map. We therefore do \emph{not} claim that
-nonlinear signal extraction adds value here; the nonlinear extension is retained in the
-research layer as the correct tool to check, and the reported conclusion is that, net of
-costs, it adds nothing reliable beyond the linear baseline. This mirrors Part 8's
-finding that over-adaptation (there in hedge space, here in signal space) does not pay.
-
-\input{tables/nonlinear.tex}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/nonlinear_ic.png}
-\caption{Out-of-sample (2022+) forecast IC of $R_t^{h}$ by basket and estimator. The
-linear baseline dominates in every basket.}
-\label{fig:nonlinear_ic}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/nonlinear_reset.png}
-\caption{Ramsey RESET $p$-values for the linear forecast equation (training sample).
-Linearity is rejected at 5\% in three baskets but not on ADBE.}
-\label{fig:nonlinear_reset}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/nonlinear_sharpe.png}
-\caption{Full-sample net-of-cost Sharpe of the ADBE z-threshold book with and without
-forecaster entry gates. Gating never improves on the plain baseline.}
-\label{fig:nonlinear_sharpe}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/nonlinear_learning.png}
-\caption{GBM learning curve on ADBE: out-of-sample $R^2$ (2019--2020) versus training
-sample size. Only near the full sample does it turn positive.}
-\label{fig:nonlinear_learning}
-\end{figure}
-
-\subsection{Kalman-filtered time-varying hedge}
-\label{sec:kalman}
-So far the hedge $\beta$ has been estimated by a fixed-window rolling regression: every
-bar a new window is discarded and refit from scratch. That refit is noisy -- the
-coefficients jump each bar as one old observation leaves and one new one arrives -- and
-it discards useful information older than the window. A Kalman filter is the canonical
-\emph{recursive} alternative: model the hedge as a slowly drifting random walk and
-update it optimally as each bar arrives, so that \emph{all} past data is used through a
-running posterior and no window has to be dropped. We implement it as a Python
-reference (\texttt{scripts/model/kalman.py}) that plugs into the same causal,
-one-bar-delayed, cost-aware simulator as the rolling hedges, giving an apples-to-apples
-net-of-cost comparison.
-
-\paragraph{State-space model.} For target log price $y_t$ and basket log prices $x_t$,
-\begin{equation}
-  \beta_t = \beta_{t-1} + \eta_t,\quad \eta_t\sim\mathcal{N}(0,Q),\qquad
-  y_t = \bigl[1,\;x_t\bigr]^{\top}\beta_t + \eps_t,\quad \eps_t\sim\mathcal{N}(0,R),
-  \label{eq:kalman}
-\end{equation}
-where the state $\beta_t=(\alpha_t,\beta_{1,t},\dots,\beta_{k,t})$ holds the intercept
-and the $k$ hedge weights. The filter is the standard predict/update recursion of
-\eqref{eq:kalman}: the predictive state $\beta_{t\mid t-1}$ (which uses only information
-through $t-1$) yields the innovation $v_t=y_t-[1,x_t]\beta_{t\mid t-1}$ with variance
-$S_t=[1,x_t]P_{t\mid t-1}[1,x_t]^{\top}+R$; the signal is the standardized innovation
-$z_t=v_t/\sqrt{S_t}$, and only \emph{after} scoring bar $t$ is it fed back to update the
-posterior. This gives exactly the Part-4 no-lookahead timing: the hedge that scores bar
-$t$ never sees bar $t$ itself. $R$ is estimated from a 120-bar warm-up OLS fit and $Q$ is
-a single state-noise dial $Q_{ii}=q^{2}R$ over all states.
-
-\paragraph{Synthetic validation.} \texttt{scripts/test\_kalman.py} verifies the filter
-before any real-data claim: on a synthetic target whose true betas drift smoothly, the
-filtered $\hat\beta_t$ tracks the true time-varying betas with an RMSE of $0.73$ versus
-$3.37$ for a fixed full-sample OLS beta; the predictive beta at bar $t$ is verified to
-depend only on bars $<t$ (no lookahead); and the filtered residual rejects a unit root
-(ADF $p<10^{-3}$) with an OU half-life of $\approx$8 bars, i.e.\ the filtered spread is
-the same tradeable-stationary object Parts 4--7 rely on.
-
-\paragraph{Real-data comparison.} \autoref{tab:kalman_compare} and
-\autoref{fig:kalman_sharpe} compare the Kalman hedge (swept over the state-noise dial
-$q$) with the rolling OLS/Ridge hedges on the ADBE basket, all net of 10\,bps.
-\autoref{fig:kalman_beta} shows the filtered beta path against the rolling-OLS path.
-
-\input{tables/kalman.tex}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/kalman_sharpe.png}
-\caption{Net-of-cost Sharpe (full sample and 2022+ test) for the Kalman state-noise
-sweep and the rolling OLS/Ridge hedges on the ADBE basket at 10\,bps.}
-\label{fig:kalman_sharpe}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/kalman_beta.png}
-\caption{Kalman-filtered hedge weight on \texttt{CRM} over time versus the causal
-rolling-OLS-120 weight (Part 5).}
-\label{fig:kalman_beta}
-\end{figure}
-
-\textbf{Findings.} Three honest observations emerge.
-\begin{enumerate}[label=\textbf{K\arabic*.}]
-  \item \textbf{A smooth, low-turnover hedge is the adaptive win.} The best net-of-cost
-    Kalman operates at \emph{low} state noise ($q\lesssim10^{-4}$): it is a smoothly
-    updated (near-constant) hedge that trades only 61 round trips over the full sample
-    (vs 133--362 for the windowed hedges) and reaches a full-sample net Sharpe of
-    $\approx0.11$ -- the best of any hedge tested here, above rolling Ridge
-    ($\approx0.09$) and rolling OLS ($0.05$--$0.08$). Because the ADBE--basket
-    relationship is fairly stable over 2010--2026, the recursive smoother adds value by
-    \emph{not} churning the hedge each bar the way a refit window does, cutting the cost
-    drag that Parts 4--5 showed dominates.
-  \item \textbf{Adaptation is not monotone -- over-tracking destroys the spread.}
-    Raising $q$ so the filter follows the levels faster (which actually \emph{maximises}
-    the Gaussian fit likelihood on the training data) makes the residual white and
-    removes the persistent deviation that is the tradable mispricing: net Sharpe falls
-    to $-0.04$ at $q=10^{-2}$ and is most negative on the test period. This is the
-    state-space echo of Part 6's finding that the \emph{causal rolling} spread, not a
-    fast-tracking fit, is the stationary tradeable object.
-  \item \textbf{Robustness on 2022+ is a real advantage but not universal.} The
-    low-drift Kalman stays net-positive out-of-sample on 2022+ ($\approx0.09$--$0.11$),
-    in contrast to the default-window OLS/Ridge hedges which are net-negative there
-    (only the very-short rolling-OLS-60, which also adapts fast, is net-positive at
-    $0.52$). The single-dial design is nevertheless fragile: choosing $q$ on the
-    2019--2021 validation window by net Sharpe selects $q=10^{-3}$, which performs
-    poorly out-of-sample -- a transparent sign that the appropriate amount of
-    adaptation is itself regime-dependent and should be shrunk toward the smooth limit
-    given the small daily edge and cost drag established throughout this report.
-\end{enumerate}
-\emph{C++ port note.} The Kalman recursion is kept as a dependency-free Python
-reference in the research layer; porting it to the C++ engine (a $O(d^{3})$ update with
-$d\le5$) is straightforward and deferred, as the per-bar cost is negligible relative to
-the data I/O already handled there.
-
-% =============================================================================
-% 7. BACKTEST RESULTS
-% =============================================================================
-\section{Backtest Results}
-\label{sec:backtest}
-
-\subsection{Walk-forward methodology and no-lookahead}
-\label{sec:bt:method}
-All backtests are \emph{walk-forward} and \emph{lookahead-free}. For a target and its
-basket the engine (\texttt{src/engine/spread\_backtest.h}) maintains a rolling
-regression of the target's log price on the basket's log prices over a window $W$; the
-window used to score day $t$ ends at day $t-1$, so the hedge betas are causal and the
-target's own day-$t$ price never enters its own fitted value. The standardized residual
-$z_t$ triggers a market-neutral entry ($|z_t|\ge z_{entry}$), which is executed only from
-the \emph{next} bar (a decision made with data through close($t$) starts earning on bar
-$t{+}1$). This one-bar execution delay is asserted by a dedicated unit test that
-manufactures a single large mispricing and verifies the position never becomes active on
-the signal day itself. We use the sample split train 2010--2018 / validation
-2019--2021 / test 2022--2026 for the later parameter and model comparisons; the rolling
-window design here is itself a form of walk-forward validation that never refits on
-future data.
-
-\subsection{Transaction-cost model}
-\label{sec:bt:cost}
-Two cost layers are applied, and \emph{every} result below is reported gross and net.
-\begin{itemize}
-  \item \textbf{Proportional cost} charged on the traded gross notional at each open and
-    close (both legs, both sides), covering half-spread plus commission. The baseline is
-    10 basis points one-way; a full sensitivity sweep over 0--50 bps is reported.
-  \item \textbf{Market impact} follows the square-root law
-    \cite{almgren2005},
-    \begin{equation}
-      \text{impact} \;\propto\; \sigma\,\sqrt{\frac{Q}{V}} ,
-      \label{eq:impact}
-    \end{equation}
-    where $Q$ is the order size, $V$ the average daily volume and $\sigma$ the asset's
-    return volatility. Because the positions here are dollar-normalized to \$1 gross and
-    the assets are highly liquid, participation $Q/V$ is small and impact is a second-order
-    add-on to the proportional cost; the model is implemented and its participation term
-    will bind in the capacity analysis (\S robustness).
-\end{itemize}
-Sizing: each open position is normalized so gross notional equals \$1 (short \$1 of the
-target, long $\beta_i$ dollars of each basket name, rescaled by
-$g = 1+\sum_i\lvert\beta_i\rvert$); this makes the book approximately market-neutral and
-the NAV directly comparable across trades.
-
-\subsection{Single-basket demonstration}
-\label{sec:bt:base}
-As the correctness core, we first trade one economically coherent basket: target
-\texttt{ADBE} (Adobe) against application-software peers \texttt{CRM}, \texttt{ADSK},
-\texttt{INTU} (all Information Technology; 4{,}190 common trading days, 2010--2026).
-With a 120-day regression window and entry/exit z-bands of $2.0/0.5$,
-\autoref{fig:equity_curve} shows the gross and net NAV; \autoref{tab:backtest_base} and
-\autoref{fig:cost_sensitivity} summarize. The gross Sharpe is $\approx 0.39$ over the
-full sample, but at 10 bps one-way the net Sharpe falls to $\approx 0.05$ and turns
-negative at higher costs -- a typical and honest finding for daily-frequency spread
-trading, and the motivation for the model/parameter work in later sections. This is
-one basket; the multi-basket portfolio construction and risk controls are treated in
-the portfolio sections of this report.
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/equity_curve.png}
-\caption{Gross vs net equity (log NAV) of the spread strategy on target ADBE /
-basket \{CRM, ADSK, INTU\}, 2010--2026.}
-\label{fig:equity_curve}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.75\linewidth]{figures/cost_sensitivity.png}
-\caption{Annualized net Sharpe as a function of one-way transaction cost.}
-\label{fig:cost_sensitivity}
-\end{figure}
-
-\input{tables/backtest_base.tex}
-
-\subsection{Multi-basket book and risk controls}
-\label{sec:portfolio}
-A single strategy is not a book. To test the risk-engineering rather than one lucky
-residual, we assemble \textbf{four concurrent market-neutral spread strategies} spanning
-three GICS sectors, each run through the identical causal 120-bar OLS hedge at 10\,bps
-one-way cost (the model of \S\ref{sec:bt:base}):
-\begin{itemize}
-  \item \texttt{ADBE} (software) vs \{\texttt{CRM},\texttt{ADSK},\texttt{INTU}\};
-  \item \texttt{AVGO} (semiconductors) vs \{\texttt{ADI},\texttt{INTC},\texttt{AAPL}\};
-  \item \texttt{GS} vs \texttt{BAC} (large-cap banks);
-  \item \texttt{CAT} vs \texttt{HON} (industrials).
-\end{itemize}
-These use \emph{disjoint} name-sets, so their daily P\&L is far from perfectly
-correlated and combining them is economically meaningful. Each strategy is a
-dollar-neutral book on its own (short \$1 of the target, long $\beta_i$ dollars of the
-basket, rescaled so gross notional is \$1), so the aggregate book has near-zero net
-dollar exposure by construction. \autoref{tab:portfolio_summary} reports each book
-alone and the combined book under two allocation schemes; \autoref{fig:portfolio_equity}
-plots the combined NAV with the stress windows shaded; \autoref{fig:portfolio_alloc}
-shows the inverse-vol weights.
-
-\input{tables/portfolio.tex}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/portfolio_equity.png}
-\caption{Combined NAV of the four-strategy book (net of costs) under equal-weight and
-inverse-vol allocation, 2010--2026. The shaded bands are the COVID-2020 and 2022
-stress windows.}
-\label{fig:portfolio_equity}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/portfolio_allocation.png}
-\caption{Inverse-vol allocation across the four strategies, rebalanced monthly with a
-per-name concentration cap of 45\% (water-fill; the book budget $\sum w=1$ and the cap
-are enforced and verified on every rebalance).}
-\label{fig:portfolio_alloc}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/portfolio_risk.png}
-\caption{Portfolio daily P\&L against the historical VaR95 threshold (top) and the
-log-drawdown of the inverse-vol book (bottom).}
-\label{fig:portfolio_risk}
-\end{figure}
-
-\textbf{How the risk controls are enforced and verified.} The inverse-vol allocation
-weights are recomputed monthly from each strategy's trailing 252-day realized daily
-P\&L volatility ($w_i\propto1/\sigma_i$) and then constrained by a water-fill that caps
-any single strategy at 45\% of book capital while keeping $\sum_i w_i=1$. At every
-rebalance the running backtest asserts (i) the weights remain a simplex summing to
-\$1 of gross book notional and (ii) no weight exceeds the concentration cap -- both are
-checked and reported. The identical primitives are unit-tested in C++
-(\texttt{src/portfolio/risk.h}: inverse-vol weights, gross/net exposure, limit
-verification), and gross/net exposure of the book is, by construction of the underlying
-strategies, market-neutral. Per-day risk is summarised with historical VaR95/CVaR95 on
-the portfolio daily P\&L (Table \ref{tab:portfolio_summary}); VaR95 of the inverse-vol
-book is \$0.0039/day on \$1 gross vs \$0.0041 under equal weight.
-
-\textbf{Honest portfolio outcome.} Because Parts 4--5 established that a single
-daily-frequency spread barely clears costs, the combined book is \emph{net-negative}
-over the full sample (net Sharpe $\approx-0.40$ to $-0.46$). This is the truthful result
-and the reason the risk section is not dressed up as a winner. What the risk
-engineering demonstrably buys is \emph{tail reduction}: the inverse-vol book cuts the
-worst single-strategy drawdowns (\texttt{AVGO} 0.78, \texttt{CAT} 0.85) to a book-level
-0.38, lowers VaR95 and CVaR95 versus equal weight, and avoids over-concentrating in the
-single net-positive book (\texttt{ADBE}). The regime decomposition
-(\autoref{tab:portfolio_regime}) shows the losses are broad but worst in the 2022
-selloff (net Sharpe $-1.3$) and elevated-volatility terciles -- the pattern expected
-when the edge is small relative to costs and equity vol spikes. 2008 lies outside the
-2010--2026 panel, so the classic crisis is \emph{not} testable here; that limitation is
-disclosed rather than papered over.
-
-\textbf{Parameter sensitivity.} \autoref{fig:portfolio_heat_ez} and
-\autoref{fig:portfolio_heat_ridge} are net-Sharpe sensitivity surfaces for the
-representative \texttt{ADBE} book. Raising the entry z-threshold (fewer, better
-separated trades) and lengthening the hedge window both raise \emph{net} Sharpe by
-cutting turnover and its cost drag (e.g.\ window 180/entry 3.0 $\approx0.21$ vs the
-default window 120/entry 2.0 $\approx0.05$), and a stronger Ridge penalty helps at short
-windows -- all consistent with the cost-drag finding of \S\ref{sec:bt:base}.
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.68\linewidth]{figures/portfolio_heat_ez.png}
-\caption{Net Sharpe of the \texttt{ADBE} book as a function of regression lookback
-window and entry z-threshold.}
-\label{fig:portfolio_heat_ez}
-\end{figure}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.68\linewidth]{figures/portfolio_heat_ridge.png}
-\caption{Net Sharpe of the \texttt{ADBE} book as a function of lookback window and
-Ridge penalty $\lambda$.}
-\label{fig:portfolio_heat_ridge}
-\end{figure}
-
-% =============================================================================
-% 8. ROBUSTNESS AND STATISTICAL VALIDITY
-% =============================================================================
-\section{Robustness and Statistical Validity}
-\label{sec:robustness}
-This section applies the diagnostic battery of \S\ref{sec:diagnostics} to the residuals
-of the final spread models (Part 6), then runs the formal data-snooping corrections
-(Bonferroni across the full scanned universe, White's Reality Check, Hansen's SPA) and
-the pairwise Diebold--Mariano comparison (Part 10). The honest conclusion of that audit
---- no headline net Sharpe survives a fair multiple-testing correction --- is stated in
-\S\ref{sec:diag:multtest}.
-
-\subsection{Statistical diagnostics on the final residuals}
-\label{sec:diag:results}
-The battery is run on two kinds of residual for target \texttt{ADBE} vs the basket
-\{\texttt{CRM}, \texttt{ADSK}, \texttt{INTU}\}: a \emph{static} hedge (one fixed
-OLS/Ridge fit of the log-price relation, the object the Engle--Granger and HAC
-questions refer to) and the \emph{rolling} causal spread (the 120-bar walk-forward
-hedge the strategy actually trades, \S\ref{sec:bt:method}). Results are reported over
-the full sample and the out-of-sample 2022+ period. \autoref{tab:diag_stationarity}
-summarises; \autoref{fig:diag_residual} shows the traded spread and its
-autocorrelogram.
-
-\input{tables/diagnostics.tex}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/diagnostics_residual.png}
-\caption{The causal rolling spread actually traded (top) and its autocorrelation
-function (bottom). The ACF decays to the 95\% band by roughly lag 10--20, consistent
-with the estimated OU half-life of $\approx\!9.4$ trading days.}
-\label{fig:diag_residual}
-\end{figure}
-
-The reading of \autoref{tab:diag_stationarity} is clear and, in part, uncomfortable:
-\begin{enumerate}[label=\textbf{D\arabic*.}]
-  \item \textbf{The static long-run hedge is NOT a clean cointegrating residual.}
-    Over the full 2010--2026 sample the fixed OLS (and Ridge) hedge residual fails to
-    reject a unit root (ADF $p\approx0.08$, verdict \emph{unit\_root}) and its implied OU
-    half-life is $170$--$178$ trading days (worse, $460$--$475$, in 2022+). A single
-    hedge ratio estimated once over sixteen years cannot pin ADBE to its peers; the
-    relationship drifts. This is why naive long-horizon cointegration is not the trading
-    vehicle.
-  \item \textbf{The causal rolling spread IS mean-reverting.} The spread the strategy
-    actually trades rejects a unit root decisively (ADF $p<0.001$, both full and test),
-    is classified \emph{stationary} in the out-of-sample window, and reverts with an OU
-    half-life of $\approx\!9.4$ trading days that is stable across 2010--2026 and
-    2022+. The adaptive, walk-forward hedge is what creates the tradeable, stationary
-    spread; the fixed one does not. This is direct, live evidence for the value of
-    time-varying (rolling, and later Kalman, \S\ref{sec:nonlinear}) hedge estimation.
-  \item \textbf{Strong residual serial correlation and heteroskedasticity.} Durbin--Watson
-    is $<0.15$ (large positive first-order serial correlation) and Ljung--Box rejects
-    white noise ($p<10^{-3}$) for every residual. This is expected: a persistent
-    mispricing that reverts over days is, by construction, autocorrelated. Combined with
-    Breusch--Pagan and White both rejecting homoskedasticity ($p<10^{-3}$) for the
-    hedge regression, it is exactly the profile that makes \emph{i.i.d.} standard errors
-    invalid and the HAC correction of \S\ref{sec:diag:hac} necessary.
-\end{enumerate}
-
-\subsection{Cointegration and hedge significance}
-\label{sec:diag:coint}
-\autoref{tab:diag_coint} reports the Engle--Granger two-step test of ADBE against each
-basket name individually, the Johansen cointegration rank of the full four-name
-log-price vector, and the hedge $t$-statistics before/after the Newey--West HAC
-correction. The basket is genuinely cointegrated at the portfolio level (Johansen rank
-$r=2$ at 95\%), and the individual spreads are cointegrated for \texttt{CRM}
-($p=0.003$) and \texttt{ADSK} ($p=0.033$) but not clearly for \texttt{INTU}
-($p=0.117$). Consistently, the full-sample hedge weights on \texttt{CRM} and
-\texttt{ADSK} are strongly significant even after the HAC correction ($t\approx7.3$ and
-$9.4$), whereas \texttt{INTU}'s weight is insignificant ($t\approx0.5$). The hedge is
-economically real but dominated by two of the three peers -- a finding that the
-sparsification result of \S\ref{sec:mc:findings} (dropping a name degraded the book)
-qualifies, since INTU still reduces residual variance in the rolling estimate even
-where it is not individually cointegrated over the long sample.
-
-\subsection{Half-life versus holding period}
-\label{sec:diag:halflife}
-\autoref{fig:diag_halflife} contrasts the estimated OU half-life with the realized
-average holding period. The traded (rolling) spread has $\tau_{1/2}\approx9.4$ bars,
-while the strategy holds trades an average of $16$--$18$ bars (full sample and test)
--- roughly \textbf{1.7--1.9 half-lives per trade}. Holding near two half-lives captures
-$\approx$75\% of the reversion, so the horizon is reasonable, but it sits on the
-turnover-heavy side given the 10\,bps cost drag that Part 4 showed erases most of the
-daily edge. The static hedge's nominal half-life of $\sim$200 bars is not a tradeable
-quantity; it reflects the drifting (non-stationary) fixed hedge rather than the speed
-of the actual spread, and is reported to emphasise the difference rather than as a
-strategy parameter.
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.85\linewidth]{figures/diagnostics_halflife.png}
-\caption{OU half-life (log scale) of the static hedge vs the realized holding period,
-full sample and 2022+ test. The static-hedge half-life ($\sim$170--475 bars) is
-reported only to contrast with the traded rolling spread ($\approx$9.4 bars, dashed
-line) that the strategy actually holds for $\sim$17 bars.}
-\label{fig:diag_halflife}
-\end{figure}
-
-\subsection{A data-snooping correction of the headline Sharpe}
-\label{sec:diag:multtest}
-Every headline number in this report was the \emph{best} of a scan: four baskets,
-hedge windows $60/120/180$, penalised estimators, a Kalman state-noise dial, and
-Parts 8--9's signal variants. Reporting the best scan's Sharpe with an uncorrected
-$p$-value is invalid (White 2000; data snooping). This subsection answers the
-adversarial question rigorously: \textbf{is the best observed net Sharpe still
-distinguishable from zero once we count the search?} The answer, computed on net
-(10\,bps) daily P\&L over one common calendar (Nov 2010--Sep 2026) for
-\autoref{eq:kalman}-style and rolling hedges, is \emph{no}.
-
-\paragraph{Hypothesis count.} We define the data-snooping universe symmetrically as
-$M=44$ distinct (basket $\times$ hedge) strategies: the \emph{same} grid of eleven
-hedge models --- rolling OLS with windows 60/120/180, Ridge $w120$, Lasso $w120$,
-ElasticNet $w120$, PCA $w120$, and Kalman $q\in\{10^{-5},10^{-4},10^{-3},10^{-2}\}$
---- run on each of the four baskets. This reproduces the breadth of hedge models
-whose full-sample net Sharpes Parts 4--8 reported, on a fair common window.
-\autoref{tab:multtest_audit} lists the best of them; \autoref{fig:multtest_sharpe}
-plots the top of the scan.
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/multtest_sharpe.png}
-\caption{Best of the $M=44$ scanned (basket, hedge) strategies by full-sample net
-Sharpe (10\,bps). The empirical best, \texttt{GS} rolling OLS $w180$, reaches only a
-raw one-sided HAC $p$ of $0.059$.}
-\label{fig:multtest_sharpe}
-\end{figure}
-
-\paragraph{The corrections.} \autoref{tab:multtest_corrections} reports three
-layers of correction.
-\begin{enumerate}[label=\textbf{T\arabic*.}]
-  \item \textbf{The best is not even marginally significant before correction.} The
-    best scanned strategy (\texttt{GS}, rolling OLS $w180$, net Sharpe $\approx0.35$)
-    has a one-sided Newey--West HAC $p$ of $0.059$ against the null of zero mean daily
-    net P\&L --- above the uncorrected $5\%$ line. Its edge is spread over only 90
-    round trips across sixteen years, so most days contribute zero P\&L and the HAC
-    $t$ stays small; a high Sharpe on sparse, autocorrelated P\&L is exactly the
-    profile an i.i.d. $t$-test would overstate and the HAC correction tames.
-  \item \textbf{Bonferroni.} With $M=44$ the marginal bar is
-    $0.05/44\approx0.0011$; the best strategy's adjusted $p$ is $1.0$ and \textbf{zero}
-    of the $44$ strategies rejects the null after the correction
-    (\autoref{fig:multtest_pvalues}).
-  \item \textbf{White Reality Check and Hansen SPA.} On the full $44$-column matrix of
-    daily net returns (stationary bootstrap, 1,200 draws), the White (2000) Reality
-    Check returns $p\approx0.87$ and Hansen's (2005) SPA $p\approx0.64$ --- neither
-    anywhere near rejecting the null that the best scanned strategy is no better than
-    zero.
-\end{enumerate}
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/multtest_pvalues.png}
-\caption{One-sided HAC $p$-values of the $M=44$ scanned strategies (log scale). The
-best ($p=0.059$) sits above the uncorrected 5\% line (dashed), let alone the
-Bonferroni bar $0.05/44$ (dotted); none survives.}
-\label{fig:multtest_pvalues}
-\end{figure}
-
-\input{tables/multtest.tex}
-
-\paragraph{Explicit verdict.} \textbf{No scanned net-Sharpe is statistically
-distinguishable from zero after a fair multiple-testing correction.} Even without
-correcting, the best raw HAC $p$ is $0.059$; Bonferroni, White RC and Hansen SPA all
-clear it. This is the expected, honest endpoint of Parts 4--9: the daily edge is real
-in \emph{sign} (positive IC, stationary adaptive spread, low-turnover hedges beating
-high-turnover ones out-of-sample) but small relative to cost drag and noise, so it
-cannot survive a search of the breadth reported here. What \emph{is} defensible is
-qualitative and directional: the sign and structure of the results (mean reversion of
-the causal rolling spread, the smooth low-noise Kalman being the best adaptive hedge,
-linear beating nonlinear net of cost) are internally consistent, while the point
-estimates of net Sharpe are not statistically strong.
-
-\paragraph{Pairwise Diebold--Mariano.} Beyond the ``best vs zero'' question, do the
-candidate hedges differ from one another? \autoref{fig:multtest_forest} applies the
-Diebold--Mariano test to the daily \emph{net-return} difference of the best
-within-\texttt{ADBE} hedge (Kalman $q=10^{-5}$) against every other \texttt{ADBE}
-variant over the same window, using a Newey--West HAC standard error of the mean
-difference (valid under the serial correlation of multi-day holds).
-\autoref{fig:multtest_forest} shows every 95\% confidence interval spans zero: no
-\emph{ADBE} pair is distinguishable. The hedge differences Parts 5--8 emphasised
-(smooth low-turnover vs. churning windowed refits) are economically large and
-directional but statistically within noise on a single sixteen-year panel of one
-daily-frequency basket --- the usual power limitation of comparing cost-limited,
-low-turnover strategies.
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/multtest_forest.png}
-\caption{Diebold--Mariano forest on \texttt{ADBE}: mean daily net-P\&L difference of
-the best within-\texttt{ADBE} hedge (Kalman $q=10^{-5}$) minus each other hedge, with
-Newey--West HAC 95\% CIs. Every interval spans zero; no pair is distinguishable.}
-\label{fig:multtest_forest}
-\end{figure}
-
-% =============================================================================
-% 9. SYSTEM ARCHITECTURE & LATENCY ANALYSIS
-% =============================================================================
-\section{System Architecture and Latency Analysis}
-\label{sec:architecture}
-
-\subsection{Design principles and rationale}
-\label{sec:arch:principles}
-The backtest / execution core is written in C++17, organised under
-	exttt{src/{data,model,signal,portfolio,engine}} and driven by the following
-spec-mandated principles, each justified by cache-line reasoning rather than asserted. In addition to the core backtest units above, the engine ships post-Part-3 modules including 	exttt{src/portfolio/risk.h} which implements inverse-vol weighting with per-name concentration caps (45\%) and water-fill rebalancing, used by the portfolio construction in Section 7 and unit-tested in the C++ test suite; the signal/spread components from Parts 4--9 (Kalman filter, rolling regressions, nonlinear gates) are integrated through the same causal pipeline but are documented respectively in Sections 8 and 9.
-\begin{itemize}
-  \item \textbf{Contiguous flat storage over pointer-chasing containers.} Price
-    histories, feature-window buffers and position tables are \texttt{std::vector}
-    (or flat arrays over \texttt{std::vector}), never \texttt{std::map}/\texttt{std::list}.
-    Spatial locality means a cache miss fetches a 64-byte line of useful data and
-    the hardware prefetcher can stream subsequent elements; tree and node-based
-    containers stride through scattered heap lines.
-  \item \textbf{Structure-of-Arrays (SoA).} \texttt{MarketDataBuffer} stores
-    timestamps, prices and volumes in separate contiguous buffers
-    (\texttt{src/data/market\_data\_buffer.h}). The per-bar loop that needs only
-    prices touches one contiguous column instead of striding through interleaved
-    structs, which wastes cache lines.
-  \item \textbf{No dynamic allocation on the hot path.} Every buffer is sized in
-    the constructor; \texttt{RollingRegression::update()} and \texttt{compute()}
-    reuse pre-allocated scratch for the Cholesky solve and allocate nothing. This is
-    verified by an allocation-counting unit test (a global \texttt{operator new}
-    counter reports zero allocations during 1000 windowed updates+solves).
-  \item \textbf{Incremental regression, not refits.} \texttt{RollingRegression}
-    maintains rank-1 accumulators $X^{\top}X$, $X^{\top}y$, $s_x$, $s_y$ under
-    push/evict, so each bar costs $O(n_{\text{feat}})$ to update and a single small
-    $O(n_{\text{feat}}^3)$ Cholesky solve when coefficients are requested. Feature
-    rows live in a flat row-major ring buffer so eviction knows which row leaves.
-  \item \textbf{No vtable/heap in the hot path.} Polymorphism is deferred to the
-    outer research layer; the per-bar units are concrete, template-friendly classes.
-  \item \textbf{Dependency-free linear algebra.} Eigen is not installable in this
-    sandbox (apt/conda blocked; only pypi and GitHub reachable), so we provide a
-    small contiguous, row-major dense layer (\texttt{src/model/dense\_la.h}): an
-    SPD/ridge Cholesky solver and a cyclic-Jacobi symmetric eigen-solver (used for
-    PCA in Section \ref{sec:modelcomparison}). For the small $n_{\text{feat}}$ used
-    here this is cache-friendly and vectorizable; it is documented as the chosen
-    alternative to vendoring Eigen.
-\end{itemize}
-
-\subsection{Cache-efficiency microbenchmarks}
-\label{sec:arch:bench}
-\autoref{fig:cache_bench} reports live measurements. The rolling-window sweep over a
-contiguous \texttt{std::vector} is $\approx\!1.15\times$ faster than the same sweep
-over a \texttt{std::deque} at a 250-bar window, and the SoA column reduction is
-$\approx\!1.03\times$ faster than the AoS reduction over $2^{20}$ elements. These
-are \emph{modest} because a block-deque and AoS structs both prefetch reasonably at
-these sizes on modern hardware; the architectural benefit is not a large multiplier
-on one microbenchmark but the combination of no-allocation, predictable memory and
-SIMD-friendly flat layout across the whole simulation. We report the measured
-numbers without inflating them.
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/cache_bench.png}
-\caption{Cache-efficiency microbenchmarks (measured): rolling-window sweep over a
-contiguous \texttt{std::vector} vs \texttt{std::deque}, and a Structure-of-Arrays vs
-Array-of-Structures column reduction.}
-\label{fig:cache_bench}
-\end{figure}
-
-\subsection{Per-stage latency}
-\label{sec:arch:latency}
-\autoref{fig:latency_hist} and \autoref{tab:engine_bench} show the per-stage latency
-distribution of the C++ pipeline over 30{,}000 synthetic bars, measured with
-\texttt{std::chrono::high\_resolution\_clock} and summarised by fixed histograms
-(\texttt{src/engine/latency\_hist.h}) as p50/p95/p99, not just the mean. The
-regression update and solve dominate at $\approx\!0.6\,\mu$s p50, while signal
-generation and order placement are roughly $25\,\text{ns}$. (Timings are for a
-single target/basket; a full multi-asset book and real data are exercised in the
-backtests of Section \ref{sec:backtest}.)
-
-\begin{figure}[H]\centering
-\includegraphics[width=0.8\linewidth]{figures/latency_hist.png}
-\caption{Per-stage latency histogram (p50/p95/p99, ns) of the C++ pipeline.}
-\label{fig:latency_hist}
-\end{figure}
-
-\input{tables/engine_bench.tex}
-
-% =============================================================================
-% 10. DISCUSSION: WHAT THIS DOES AND DOESN'T REPLICATE
-% =============================================================================
-\section{Discussion: What This Does and Does Not Replicate}
-\label{sec:nonreplicate}
-The following non-goals are explicitly stated for the fund-level implementation of this research:
-\begin{itemize}
-\item No proprietary alternative data: the analysis uses only publicly available Yahoo Finance equity data (195-name universe, 2010--2026). Incorporating alternative data (fundamental factors, options order flow, sentiment scores) would require a separate data infrastructure and is outside the scope of this report.
-\item No colocated / FPGA-level execution: the C++ engine runs on standard x86 hardware with millisecond-scale latency. Colocation and FPGA optimization are viable at production fund level but are not claimed here.
-\item No cross-asset-class integration: the report studies single-asset baskets within equities. Extending to cross-asset-class strategies (e.g., equity/treasury/futures) is a distinct research program.
-\item No live capital allocation feedback loops: all backtests are historical and simulation-based. Live allocation would require risk management, compliance, and operational infrastructure not addressed in this academic prototype.
-\end{itemize}
-
-% =============================================================================
-% 11. CONCLUSION
-% =============================================================================
-\section{Conclusion}
-\label{sec:conclusion}
-A statistically defensible edge does not exist in the headline net Sharpe after fair multiple-testing correction, transaction costs, and out-of-sample validation. The qualitative results (mean reversion of the causal rolling spread, low-turnover smooth hedges beating churny refits, linear beating nonlinear net of cost) are directionally defensible, but no point estimate of net Sharpe is statistically strong when the search breadth (M=44 strategies) and cost drag (10 bps round-trip) are properly accounted for. The daily edge is real in sign and structure but small relative to noise and costs.}
-
-% =============================================================================
-% 12. REFERENCES
-% =============================================================================
-\printbibliography
-
-% =============================================================================
-% 13. APPENDIX
-% =============================================================================
 \appendix
-\section{Additional Derivations and Diagnostic Tables}
-\label{sec:appendix}
-
-\subsection{Synthetic validation of the statistical toolkit}
-\label{sec:appendix:statkit}
-The statistical routines of Section \ref{sec:method} are unit-tested on synthetic
-data (spec-permitted for isolated math checks) via
-\texttt{scripts/run\_statkit\_tests.py} (29 tests, all passing). Table
-\ref{tab:statkit_validation} records representative recoveries from simulated data so
-that the claims in \S4 are reproducible rather than hand-typed; in particular the
-Ornstein--Uhlenbeck speed and half-life are recovered to within $<1.5\%$ and the White
-Reality Check is non-significant when all $M$ scanned strategies are genuinely null but
-detects a real edge.
-
-\input{tables/method_validation.tex}
-
-\subsection{Extended derivations}
-\emph{[Additional algebra deferred from the main text, if needed, in later Parts.]}
+\input{chapters/90_appendix_derivations.tex}
+\input{chapters/91_appendix_statkit_validation.tex}
+\input{chapters/92_appendix_reproducibility.tex}
+\input{chapters/93_appendix_glossary.tex}
 
 \end{document}

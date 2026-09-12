@@ -1,0 +1,415 @@
+% =============================================================================
+%  CHAPTER 3 -- LINEAR REGRESSION FROM SCRATCH
+% =============================================================================
+\section{Linear regression from scratch}
+\label{ch:ols}
+
+Regression is the only estimation tool this project needs, and it is used in four
+different places: to build the hedge, to test for unit roots, to fit the
+Ornstein--Uhlenbeck process, and to run the Kalman filter's update step. We therefore
+derive it completely.
+
+\subsection{The setup}
+\label{sec:ols:setup}
+
+We observe $T$ pairs $(y_t, x_t)$ with $y_t\in\R$ and $x_t\in\R^{n}$, and posit
+\begin{equation}
+  y_t \;=\; x_t^{\top}\beta + \eps_t,\qquad t=1,\dots,T,
+  \label{eq:ols:model}
+\end{equation}
+where $\beta\in\R^n$ is unknown and $\eps_t$ is an unobserved error. Stack the data:
+\begin{equation}
+  Y=\begin{bmatrix}y_1\\ \vdots\\ y_T\end{bmatrix}\in\R^{T},\qquad
+  X=\begin{bmatrix}x_1^{\top}\\ \vdots\\ x_T^{\top}\end{bmatrix}\in\R^{T\times n},
+  \qquad
+  \eps=\begin{bmatrix}\eps_1\\ \vdots\\ \eps_T\end{bmatrix}\in\R^{T},
+\end{equation}
+so that
+\begin{equation}
+  Y = X\beta + \eps,\qquad \eps\sim(0,\ \sigma^{2}I_T).
+  \label{eq:linmodel}
+\end{equation}
+The notation $\eps\sim(0,\sigma^2 I)$ means $\E[\eps]=0$ and
+$\Var(\eps)=\E[\eps\eps^{\top}]=\sigma^2 I$: errors are homoskedastic
+(same variance $\sigma^2$) and serially uncorrelated (off-diagonal zeros). If we want an
+intercept, we include a column of ones in $X$ and let the first element of $\beta$ be
+$\alpha$; nothing else changes.
+
+In our application: $y_t$ is the target's log price, $x_t=[1,\ \log P^{1}_t,\dots,\log
+P^{n}_t]^{\top}$, and $\beta=[\alpha,\beta_1,\dots,\beta_n]^{\top}$. The residual
+$\hat\eps_t$ is the spread of equation~\eqref{eq:saa:spread}.
+
+\subsection{Least squares as geometry}
+\label{sec:ols:geometry}
+
+\emph{Column space.} The set of all vectors that can be written as $X\beta$ for some
+$\beta$ is the column space $\mathcal C(X)=\operatorname{span}\{X_{\cdot 1},\dots,X_{\cdot n}\}$,
+an $n$-dimensional subspace of $\R^T$ (assuming full column rank). Choosing $\beta$ is
+choosing a point in that subspace; the fitted values $\hat Y=X\hat\beta$ are that point.
+
+\emph{The objective.} Least squares picks the point of $\mathcal C(X)$ closest to $Y$ in
+Euclidean distance:
+\begin{equation}
+  \hat\beta \;=\; \argmin_{\beta}\ \lVert Y-X\beta\rVert_2^2
+  \;=\; \argmin_{\beta}\ (Y-X\beta)^{\top}(Y-X\beta).
+  \label{eq:ols:objective}
+\end{equation}
+
+\begin{intuition}
+The closest point in a subspace is the \emph{orthogonal projection}: the residual
+$\hat\eps=Y-X\hat\beta$ must be perpendicular to the subspace, i.e.\ perpendicular to
+every column of $X$. Perpendicular means inner product zero: $X^{\top}\hat\eps=0$. That
+single geometric requirement \emph{is} the normal equations, and it is worth internalising
+because it explains half of regression's properties: residuals sum to zero (they are
+orthogonal to the ones-column), residuals are uncorrelated with the regressors
+\emph{in sample}, and $R^2$ decomposes exactly the way it does.
+\end{intuition}
+
+\subsection{Two derivations of the normal equations}
+\label{sec:ols:normal}
+
+\paragraph{(a) Calculus.} Expand the objective:
+\[
+  Q(\beta) = Y^{\top}Y - 2\beta^{\top}X^{\top}Y + \beta^{\top}X^{\top}X\beta .
+\]
+Differentiate using \eqref{eq:matrixcalculus} ($X^{\top}X$ is symmetric):
+\[
+  \nabla_\beta Q = -2X^{\top}Y + 2X^{\top}X\beta .
+\]
+Set to zero:
+\begin{equation}
+  X^{\top}X\,\hat\beta \;=\; X^{\top}Y
+  \qquad\text{(the normal equations)}.
+  \label{eq:normal}
+\end{equation}
+The Hessian is $\nabla^2_\beta Q = 2X^{\top}X$, which is positive semi-definite for any
+$X$ (since $a^{\top}X^{\top}Xa=\lVert Xa\rVert^2\ge0$), so $Q$ is convex and any
+stationary point is a global minimum.
+
+\paragraph{(b) Geometry.} Impose $X^{\top}(Y-X\hat\beta)=0$. This is literally
+\eqref{eq:normal}. No calculus needed.
+
+\paragraph{Closed form.} If $X^{\top}X$ is invertible (equivalently $\rank(X)=n$,
+equivalently no exact linear dependence among the columns),
+\begin{equation}
+  \boxed{\ \hat\beta \;=\; \bigl(X^{\top}X\bigr)^{-1}X^{\top}Y\ }
+  \label{eq:ols}
+\end{equation}
+and the minimizer is unique. If $X^{\top}X$ is singular, \eqref{eq:normal} still has
+solutions (since $X^{\top}Y\in\mathcal C(X^{\top}X)$) but they are not unique: any two
+solutions give the same fitted values $\hat Y$, and the minimum-norm one is given by the
+Moore--Penrose pseudo-inverse $X^{+}$. In practice we never rely on that: the ridge
+penalty of Section~\ref{sec:ridge} adds $\lambda I$ and restores invertibility, which is
+also why ridge fixes ``singular $X^{\top}X$'' crashes for free.
+
+\paragraph{The hat matrix.} Define
+\begin{equation}
+  H \;=\; X\bigl(X^{\top}X\bigr)^{-1}X^{\top}\in\R^{T\times T},
+  \qquad \hat Y = HY,\qquad \hat\eps = (I-H)Y .
+  \label{eq:hatmatrix}
+\end{equation}
+$H$ is the orthogonal projector onto $\mathcal C(X)$. Its properties, each of which is
+used somewhere in this book:
+\begin{align}
+  H^2 &= H \quad\text{(idempotent: projecting twice is projecting once)}, \label{eq:hat:idem}\\
+  H^{\top} &= H \quad\text{(symmetric)}, \label{eq:hat:sym}\\
+  \tr(H) &= \tr\bigl((X^{\top}X)^{-1}X^{\top}X\bigr) = n, \label{eq:hat:trace}\\
+  \tr(I-H) &= T-n, \label{eq:hat:trace2}\\
+  X^{\top}(I-H) &= 0 \quad\text{(residuals orthogonal to regressors)}. \label{eq:hat:orth}
+\end{align}
+The diagonal $h_{tt}=x_t^{\top}(X^{\top}X)^{-1}x_t$ is the \emph{leverage} of
+observation $t$: how much that observation influences its own fitted value. It satisfies
+$0\le h_{tt}\le1$ and $\sum_t h_{tt}=n$, so the average leverage is $n/T$. High-leverage
+points are observations far from the regressor cloud; in a stat-arb context they are the
+days when the basket configuration was unusual, and they are exactly where a single bad
+print can distort the hedge.
+
+\subsection{Statistical properties: unbiasedness and variance}
+\label{sec:ols:properties}
+
+\begin{theorem}[Unbiasedness]
+If $\E[\eps\mid X]=0$ and $\rank(X)=n$, then $\E[\hat\beta\mid X]=\beta$.
+\end{theorem}
+\begin{proof}
+Substitute $Y=X\beta+\eps$ into \eqref{eq:ols}:
+\[
+  \hat\beta = (X^{\top}X)^{-1}X^{\top}(X\beta+\eps)
+  = \beta + (X^{\top}X)^{-1}X^{\top}\eps .
+\]
+Take conditional expectations: $\E[\hat\beta\mid X]=\beta+(X^{\top}X)^{-1}X^{\top}\E[\eps\mid X]=\beta$.
+\end{proof}
+
+The second term, $A\eps$ with $A=(X^{\top}X)^{-1}X^{\top}$, is the \emph{estimation
+noise}. Its conditional covariance is
+\begin{equation}
+  \Var(\hat\beta\mid X) \;=\; \E\bigl[A\eps\eps^{\top}A^{\top}\mid X\bigr]
+  \;=\; A\,\E[\eps\eps^{\top}\mid X]\,A^{\top}
+  \;\overset{\Var(\eps)=\sigma^2 I}{=}\; \sigma^{2}AA^{\top}
+  \;=\; \sigma^{2}\bigl(X^{\top}X\bigr)^{-1},
+  \label{eq:ols:varbeta}
+\end{equation}
+where the last step uses $AA^{\top}=(X^{\top}X)^{-1}X^{\top}X(X^{\top}X)^{-1}=(X^{\top}X)^{-1}$.
+
+Write $X^{\top}X = \sum_{t} x_tx_t^{\top} = T\hat\Sigma_{xx}$ where $\hat\Sigma_{xx}$
+is the sample second-moment matrix of the regressors. Then
+\begin{equation}
+  \Var(\hat\beta_j) \;=\; \frac{\sigma^{2}}{T}\,\bigl[\hat\Sigma_{xx}^{-1}\bigr]_{jj},
+  \label{eq:ols:varscale}
+\end{equation}
+which displays the three things that make a coefficient uncertain: the noise level
+$\sigma^2$, the sample size $T$ (as $1/T$ in variance, $1/\sqrt T$ in standard error ---
+the $\sqrt T$ of Section~\ref{sec:prob:clt} again), and the regressor geometry through
+$\hat\Sigma_{xx}^{-1}$, which blows up when regressors are nearly collinear.
+
+\begin{theorem}[Gauss--Markov]
+\label{thm:gaussmarkov}
+Under the classical assumptions
+\begin{enumerate}[label=(G\arabic*),leftmargin=*]
+  \item linearity: $Y=X\beta+\eps$;
+  \item strict exogeneity: $\E[\eps\mid X]=0$;
+  \item spherical errors: $\Var(\eps\mid X)=\sigma^2 I_T$;
+  \item full rank: $\rank(X)=n$,
+\end{enumerate}
+$\hat\beta$ is the \emph{best linear unbiased estimator} (BLUE): for any other estimator
+$\tilde\beta=CY$ that is unbiased for all $\beta$, $\Var(\tilde\beta)-\Var(\hat\beta)$ is
+positive semi-definite.
+\end{theorem}
+\begin{proof}[Proof sketch]
+Unbiasedness of $CY$ for all $\beta$ requires $CX=I$. Write $C=(X^{\top}X)^{-1}X^{\top}+D$;
+then $CX=I+DX=I$ forces $DX=0$. Hence
+$\Var(CY)=\sigma^2 CC^{\top}=\sigma^2\bigl[(X^{\top}X)^{-1}+DD^{\top}\bigr]$
+(the cross terms vanish because $D X (X^{\top}X)^{-1}X^{\top}=0$), and $DD^{\top}$ is PSD.
+So $\Var(CY)\succeq\Var(\hat\beta)$ with equality iff $D=0$.
+\end{proof}
+
+\begin{remark}[What Gauss--Markov does \emph{not} say]
+It says nothing about biased estimators --- ridge and lasso are not BLUE and can still be
+better in MSE (equation~\eqref{eq:biasvariance}). It says nothing about the
+\emph{distribution} of $\hat\beta$ (for that you need normality of $\eps$). And it is
+silent about the case where (G3) fails --- which is the normal case in finance. When
+$\Var(\eps\mid X)=\Omega\ne\sigma^2I$, the correct covariance is the \emph{sandwich}
+\begin{equation}
+  \Var(\hat\beta\mid X) \;=\; \bigl(X^{\top}X\bigr)^{-1}X^{\top}\Omega X\bigl(X^{\top}X\bigr)^{-1},
+  \label{eq:sandwich}
+\end{equation}
+and the OLS estimator, while still unbiased, is no longer efficient --- GLS,
+$(X^{\top}\Omega^{-1}X)^{-1}X^{\top}\Omega^{-1}Y$, is. Equation~\eqref{eq:sandwich} is
+the skeleton of every robust-standard-error formula in this book, including
+Newey--West \eqref{eq:hac} and the White heteroskedasticity test.
+\end{remark}
+
+\subsection{Estimating $\sigma^2$ and the degrees-of-freedom correction}
+\label{sec:ols:sigma2}
+
+The natural candidate is $\hat\eps^{\top}\hat\eps/T$, and it is biased. Derivation:
+$\hat\eps=(I-H)\eps$, so
+\[
+  \E[\hat\eps^{\top}\hat\eps] = \E\bigl[\tr(\hat\eps\hat\eps^{\top})\bigr]
+  = \E\bigl[\tr((I-H)\eps\eps^{\top}(I-H))\bigr]
+  = \tr\bigl((I-H)\,\sigma^2 I\,(I-H)\bigr)
+  = \sigma^2\tr\bigl((I-H)^2\bigr)
+  = \sigma^2\tr(I-H) = \sigma^2(T-n),
+\]
+using cyclicity of the trace, idempotence \eqref{eq:hat:idem}, and
+\eqref{eq:hat:trace2}. Therefore the unbiased estimator is
+\begin{equation}
+  \hat\sigma^{2} \;=\; \frac{\hat\eps^{\top}\hat\eps}{T-n}
+  \;=\; \frac{\mathrm{RSS}}{T-n},
+  \label{eq:sigma2hat}
+\end{equation}
+exactly the $T-1$ argument of Section~\ref{sec:prob:variance} generalised to $n$
+estimated coefficients. \emph{In our backtests} the window is $W=120$ bars and $n=4$
+(intercept plus three basket names), so the divisor is 116, not 120 --- a $3.4\%$
+correction in $\hat\sigma^2$, $1.7\%$ in $\hat\sigma$. Small, but it is the difference
+between the spread $z$-score you compute and the one you think you compute.
+
+Under normality, $(T-n)\hat\sigma^2/\sigma^2\sim\chi^2_{T-n}$ independently of
+$\hat\beta$, hence
+\begin{equation}
+  \frac{\hat\beta_j-\beta_j}{\hat s_j}\;\sim\; t_{T-n},
+  \qquad \hat s_j = \sqrt{\hat\sigma^2\,\bigl[(X^{\top}X)^{-1}\bigr]_{jj}},
+  \label{eq:tstat}
+\end{equation}
+which is the standard $t$-statistic reported for each hedge weight --- and the object
+that HAC estimation replaces in Section~\ref{sec:ts:hac}.
+
+\subsection{$R^2$, adjusted $R^2$, and the $F$-test}
+\label{sec:ols:r2}
+
+Decompose the total variation. Since $\hat\eps\perp\hat Y$ (from \eqref{eq:hat:orth}),
+\[
+  \underbrace{\lVert Y-\bar Y\mathbf 1\rVert^2}_{\mathrm{TSS}}
+  = \underbrace{\lVert \hat Y-\bar Y\mathbf 1\rVert^2}_{\mathrm{ESS}}
+  + \underbrace{\lVert Y-\hat Y\rVert^2}_{\mathrm{RSS}},
+\]
+and
+\begin{equation}
+  R^2 = 1-\frac{\mathrm{RSS}}{\mathrm{TSS}}\in[0,1],
+  \qquad
+  \bar R^2 = 1-\frac{\mathrm{RSS}/(T-n)}{\mathrm{TSS}/(T-1)} .
+  \label{eq:r2}
+\end{equation}
+$R^2$ never decreases when a regressor is added (the column space only grows), which is
+why it is useless for model comparison; $\bar R^2$ penalizes the extra parameter and can
+decrease.
+
+The joint test ``all $k$ slopes are zero'' uses
+\begin{equation}
+  F \;=\; \frac{(\mathrm{RSS}_{\text{restricted}}-\mathrm{RSS}_{\text{unrestricted}})/k}
+              {\mathrm{RSS}_{\text{unrestricted}}/(T-n)}
+  \;\sim\; F_{k,\,T-n}\ \text{under }H_0 ,
+  \label{eq:ftest}
+\end{equation}
+which under normality follows because the numerator and denominator are independent
+scaled $\chi^2$ variables. The same algebraic form, with a different restricted model,
+is the Ramsey RESET test of Section~\ref{sec:nonlinear:reset} --- which is why we derive
+it here.
+
+\begin{remark}[Why we distrust $R^2$ in this project]
+Regressing 16 years of Adobe log prices on three peers' log prices gives
+$R^2\approx0.98$. That number is nearly meaningless: all four series are trending,
+so almost any trending regressor set produces it (Section~\ref{sec:prob:spurious}).
+This is why Phase~\ref{ch:phase5} compares estimators on \emph{strategy-level}
+out-of-sample net Sharpe and on the out-of-sample information coefficient of $z_t$
+against realized reversion returns, rather than on in-sample $R^2$.
+\end{remark}
+
+\subsection{Multicollinearity, condition number, and VIF}
+\label{sec:ols:multicol}
+
+Basket names are, by design, highly correlated --- that is what makes them a hedge.
+Correlation among regressors is not a violation of any Gauss--Markov assumption; it is a
+statement that the data is uninformative about certain directions of $\beta$.
+
+\paragraph{Variance inflation factor.} Regress $X_j$ on all the other columns and let
+$R^2_j$ be that regression's $R^2$. Then
+\begin{equation}
+  \Var(\hat\beta_j) \;=\; \frac{\sigma^{2}}{(1-R^2_j)\sum_t (x_{tj}-\bar x_j)^2}
+  \;=\; \frac{\sigma^{2}\,\mathrm{VIF}_j}{\mathrm{TSS}_j},
+  \qquad \mathrm{VIF}_j = \frac{1}{1-R^2_j}.
+  \label{eq:vif}
+\end{equation}
+Derivation: partition $X=[X_j, X_{-j}]$; the $(j,j)$ element of $(X^{\top}X)^{-1}$ equals
+$1/\bigl(X_j^{\top}(I-H_{-j})X_j\bigr)$ by the block-inverse formula, and
+$X_j^{\top}(I-H_{-j})X_j = \mathrm{TSS}_j(1-R^2_j)$. With $R^2_j=0.98$ (typical for two
+large-cap software names) $\mathrm{VIF}_j=50$: the standard error is $\sqrt{50}\approx7$
+times larger than it would be with orthogonal regressors. This is precisely the pathology
+ridge regression is designed to treat, and precisely why the OLS hedge weights in
+Phase~\ref{ch:phase5} churn.
+
+\paragraph{Condition number.} $\kappa(X^{\top}X)=\lambda_{\max}/\lambda_{\min}$; a common
+rule of thumb is that $\kappa>30$ indicates harmful collinearity. In floating point,
+relative error in the solution scales like $\kappa\cdot\varepsilon_{\text{mach}}$
+($\varepsilon_{\text{mach}}\approx2.2\times10^{-16}$ for double precision), so at
+$\kappa=10^{8}$ you have lost half your digits. Ridge's $\lambda I$ adds $\lambda$ to
+every eigenvalue, giving $\kappa_{\text{ridge}}=(\lambda_{\max}+\lambda)/(\lambda_{\min}+\lambda)$
+--- bounded by $\lambda_{\max}/\lambda$ no matter how degenerate the data are. That is a
+\emph{numerical} justification for ridge that is independent of the statistical one.
+
+\subsection{Numerical solution: Cholesky, and why we never invert}
+\label{sec:ols:cholesky}
+
+The engine must solve $(X^{\top}X+\lambda I)\beta = X^{\top}Y$ on every bar, for $n\le5$,
+in well under a microsecond. The method:
+
+\paragraph{Cholesky factorisation.} For SPD $A\in\R^{n\times n}$ there is a unique lower
+triangular $L$ with positive diagonal such that $A=LL^{\top}$. Computing it
+column-by-column (the Cholesky--Banachiewicz algorithm):
+\begin{equation}
+  L_{jj} = \sqrt{A_{jj}-\sum_{k<j}L_{jk}^2},
+  \qquad
+  L_{ij} = \frac{1}{L_{jj}}\Bigl(A_{ij}-\sum_{k<j}L_{ik}L_{jk}\Bigr),\quad i>j .
+  \label{eq:cholesky}
+\end{equation}
+Cost: $\sum_{j}\bigl[(j-1) + (n-j)(j-1)\cdot 2\bigr]$ flops $= n^3/3 + O(n^2)$ --- half
+the cost of Gauss--Jordan elimination, and no pivoting is needed because SPD-ness
+guarantees $A_{jj}-\sum_{k<j}L_{jk}^2>0$. Then solve $Lz=b$ by forward substitution and
+$L^{\top}\beta=z$ by back substitution, each $O(n^2)$.
+
+\paragraph{Why not form $A^{-1}$?} Three reasons. (i) It costs $4n^3/3$ flops versus
+$n^3/3+2n^2$. (ii) It is less accurate: the explicit inverse of an ill-conditioned
+matrix has larger elementwise error, and multiplying by it compounds that. (iii) It
+destroys structure: $A^{-1}$ is dense even when $A$ is banded. The engine's
+\code{src/model/dense\_la.h} implements the SPD/ridge Cholesky solve and never forms an
+inverse; the brute-force reference implementation used to cross-check it (to $10^{-8}$,
+Phase~\ref{ch:phase4}) also solves rather than inverts.
+
+\paragraph{Alternatives and when they matter.} QR ($X=QR$, so $\hat\beta=R^{-1}Q^{\top}Y$)
+costs $2n^2T - 2n^3/3$ and is more accurate for ill-conditioned $X$ because it never
+forms $X^{\top}X$ (which squares the condition number). SVD is the most robust and most
+expensive. For $n\le5$ and $T=120$, forming $X^{\top}X$ costs $\kappa^2$ amplification
+on a matrix whose $\kappa$ we control with $\lambda$, so Cholesky on the accumulated
+normal equations is the right engineering trade --- and it is what makes the
+$O(n)$-per-bar incremental update of Chapter~\ref{ch:systems} possible at all.
+
+\subsection{Incremental updates: the algebra that makes the engine fast}
+\label{sec:ols:incremental}
+
+A rolling window of $W$ bars advances one bar at a time. Recomputing $X^{\top}X$ from
+scratch each bar costs $O(Wn^2)$; maintaining it incrementally costs $O(n^2)$:
+\begin{equation}
+  (X^{\top}X)_{t} \;=\; (X^{\top}X)_{t-1} \;+\; x_{\text{in}}x_{\text{in}}^{\top}
+  \;-\; x_{\text{out}}x_{\text{out}}^{\top},
+  \qquad
+  (X^{\top}y)_t = (X^{\top}y)_{t-1} + x_{\text{in}}y_{\text{in}} - x_{\text{out}}y_{\text{out}},
+  \label{eq:rank1update}
+\end{equation}
+where $x_{\text{in}}$ is the row entering the window and $x_{\text{out}}$ the row leaving
+it. Each $xx^{\top}$ is a \emph{rank-1} (outer-product) update. Two consequences:
+
+\begin{enumerate}
+  \item The per-bar work is $n^2/2$ multiply-adds for the two symmetric outer products
+    ($n=4\Rightarrow 8$ flops each, 16 total) plus $n$ for the cross-product --- versus
+    $Wn^2 = 120\cdot16=1920$ for a refit. That is the difference between the measured
+    $\approx0.6\,\mu$s regression stage (Phase~\ref{ch:phase11}) and $\approx70\,\mu$s.
+  \item \textbf{Numerical drift.} Adding and subtracting rank-1 terms for 4{,}190 bars
+    accumulates rounding error: the maintained $X^{\top}X$ slowly departs from the true
+    one, and can even lose positive-definiteness. This is not hypothetical --- it is the
+    standard failure mode of naive incremental least squares. The engineering answer,
+    implemented and tested here, is a periodic exact recomputation and a
+    brute-force-versus-incremental equality assertion (Phase~\ref{ch:phase4}: agreement
+    to $10^{-8}$).
+\end{enumerate}
+
+\paragraph{Sherman--Morrison--Woodbury.} If you maintained the \emph{inverse} instead, a
+rank-1 update would be
+\begin{equation}
+  (A+uv^{\top})^{-1} = A^{-1} - \frac{A^{-1}uv^{\top}A^{-1}}{1+v^{\top}A^{-1}u},
+  \label{eq:shermanmorrison}
+\end{equation}
+i.e.\ $O(n^2)$ instead of $O(n^3)$ --- the same idea, applied one level up. It is how a
+Kalman filter can update a covariance cheaply, and it is the algebraic reason ridge
+``leave-one-out'' cross-validation can be computed in closed form without refitting
+(Section~\ref{sec:ridge:loo}). We do not use it in the hot path because we never maintain
+inverses; we derive it because it explains why the Kalman recursion of
+Chapter~\ref{ch:kalman} is cheap.
+
+\subsection{Where least squares breaks on financial data}
+\label{sec:ols:breaks}
+
+Three failures, each with a named remedy used later in this book.
+
+\begin{enumerate}
+  \item \textbf{(G2) fails: non-stationary regressors.} Log prices are $I(1)$, so the
+    CLT-based inference behind \eqref{eq:tstat} is invalid and regressions can be
+    spurious. Remedy: test the residual for a unit root
+    (Chapter~\ref{ch:timeseries}); if the residual is $I(0)$ the regression is
+    cointegrating and inference on $\hat\beta$ is actually \emph{super-consistent}
+    (converges at rate $T$, not $\sqrt T$) though non-normal.
+  \item \textbf{(G3) fails: autocorrelated and heteroskedastic errors.} Daily residuals
+    are strongly serially correlated (that is the mean reversion!) and strongly
+    heteroskedastic (volatility clustering). Point estimates stay unbiased; standard
+    errors are wrong, typically too small. Remedy: Newey--West HAC
+    (Section~\ref{sec:ts:hac}), reported before/after in Phase~\ref{ch:phase6}.
+  \item \textbf{$n$ large relative to $T$, or $\kappa$ large.} Variance explodes.
+    Remedy: regularization (Chapter~\ref{ch:regularization}) or dimension reduction
+    (PCR), and adaptive estimation when the true $\beta$ drifts
+    (Chapter~\ref{ch:kalman}).
+\end{enumerate}
+
+The measured evidence for all three is in
+Tables~\ref{tab:diag_stationarity}--\ref{tab:diag_coint}: Durbin--Watson $\approx0.15$
+(extreme positive serial correlation), Breusch--Pagan and White $p<10^{-3}$ (reject
+homoskedasticity), ADF failing to reject a unit root in the static hedge residual
+($p\approx0.08$), and HAC $t$-statistics roughly $3$--$4\times$ smaller than the classic
+ones ($t_{\text{CRM}}$: 29.5 $\rightarrow$ 7.3).

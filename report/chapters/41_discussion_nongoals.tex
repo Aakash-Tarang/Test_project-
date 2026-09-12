@@ -1,0 +1,224 @@
+% =============================================================================
+%  CHAPTER 27 -- DISCUSSION: WHAT THIS DOES AND DOES NOT REPLICATE
+% =============================================================================
+\section{Discussion: what this does and does not replicate}
+\label{ch:nongoals}
+
+A research prototype is defined as much by its non-goals as by its results. This chapter
+states, for each thing a production statistical-arbitrage book has and this project does
+not, what is missing, why it matters at fund level, which direction it would move the
+results, and what it would take to add it. The ordering is by expected impact on the
+conclusions.
+
+\subsection{1. A survivorship-bias-free universe}
+
+\textbf{Missing:} point-in-time index membership, delisted-ticker prices, and delisting
+returns. \textbf{What we have:} 195 names that Yahoo returns a full history for today, with
+a 2016-vintage membership table (Section~\ref{sec:data:survivorship}).
+
+\textbf{Why it matters at fund level.} Survivorship bias is not a rounding error for
+relative-value strategies; it removes precisely the tail events that kill them. A pair or
+basket trade's worst outcome is a permanent relationship break --- an acquisition, a
+bankruptcy, a business-model divergence --- and those outcomes are correlated with
+delisting. Conditioning on names that survived to 2026 removes most of those events from
+the sample. The measured MaxDD of $0.384$--$0.419$ and the CVaR figures are therefore
+optimistic, and the Sharpe ratios are optimistic by an unknown but certainly non-zero
+amount.
+
+\textbf{Direction:} results would get \emph{worse}. \textbf{Fix:} join a yearly constituent
+history (public sources exist) to a price source that retains delisted series (CRSP or a
+vendor graveyard file), and apply delisting returns on the exit date. This is the single
+highest-value data upgrade available and it is the only one that could plausibly change the
+qualitative conclusions.
+
+\subsection{2. Realistic financing and borrow costs}
+
+\textbf{Missing:} stock-loan fees, borrow availability and recall risk, margin and
+financing on the long leg, and the collateral yield on short proceeds.
+\textbf{What we have:} a proportional 10\,bps one-way cost with a 0--50\,bps sweep, plus a
+square-root impact model that is implemented but numerically irrelevant at \$1 notional.
+
+\textbf{Why it matters.} A market-neutral book is a \emph{financed} position: the short
+proceeds are collateralised, the long leg is levered, and the short leg pays a loan fee that
+is 25--50\,bps/year on easy-to-borrow large caps and several percent on specials --- and
+specials are exactly the names where mispricings are largest, so the cost is
+adversarially correlated with the opportunity. Borrow recalls also force liquidation at the
+worst moment, which is a path risk no proportional-cost model captures. At our measured
+gross annual return of $3.02\%$ and $16.6$-bar average holding, a 30\,bps/year borrow on
+half the notional costs $\approx0.5\%$/year --- enough to take the net return from $0.38\%$
+to about zero.
+
+\textbf{Direction:} worse. \textbf{Fix:} a per-name borrow-cost series (vendor data), a
+recall-event model, and a financing term on the NAV recursion
+\eqref{eq:bt:pnl}.
+
+\subsection{3. Capacity}
+
+\textbf{Missing:} any statement about how much money the strategy can hold.
+\textbf{What we have:} a per-dollar edge on \$1 gross notional, with the impact model of
+\eqref{eq:impact} implemented but non-binding at that scale.
+
+\textbf{Why it matters.} Edge per dollar and dollars of edge are different products, and a
+fund buys the second. Solving \eqref{eq:impact} for the participation rate at which impact
+alone equals a 10\,bps budget ($\sigma=2\%$, $Y=0.5$) gives $Q/V\approx1\%$ of daily
+volume --- of order \$15M/day traded per name in \code{ADBE} at its historical volume.
+Across four baskets with $\approx12$ round trips per year, that implies a book capacity in
+the low hundreds of millions before impact consumes the edge; the true limit is lower
+because relative-value flow is concentrated in the same names at the same times.
+
+\textbf{Direction:} unchanged for the reported ratios, but it bounds the economic value of
+any improvement. \textbf{Fix:} re-run the backtest with notional scaled to a participation
+constraint, and report net Sharpe as a function of assets under management --- the standard
+capacity curve.
+
+\subsection{4. A real risk model and factor neutrality}
+
+\textbf{Missing:} neutralisation against a multi-factor risk model (market, size, value,
+momentum, sector, volatility, liquidity), position limits by sector and by name,
+ex-ante tracking-error budgets, and a leverage policy.
+\textbf{What we have:} dollar neutrality by construction
+\eqref{eq:grossing}, inverse-vol strategy weights with a 45\% cap and verified gross/net
+limits (Section~\ref{sec:bt:sizing}), and realized VaR/CVaR.
+
+\textbf{Why it matters.} A book that is dollar-neutral is not risk-neutral. The
+Phase~\ref{ch:phase7} regime decomposition shows the losses concentrate in the 2022
+rate-driven rotation --- a factor event, not an idiosyncratic one --- which means the book
+carried an unneutralised growth/duration exposure that the dollar-neutral construction did
+not see. A fund would size this book against a factor model and would have reduced or
+hedged that exposure, changing both the return and the drawdown.
+
+\textbf{Direction:} ambiguous --- probably lower return \emph{and} lower drawdown, i.e.\ a
+better Sharpe but a smaller absolute P\&L. \textbf{Fix:} regress each strategy's daily P\&L
+on a public factor set, neutralise the residual betas in the position construction, and
+report ex-ante factor exposures alongside the realized tail statistics.
+
+\subsection{5. Intraday and higher-frequency implementation}
+
+\textbf{Missing:} anything below daily bars. No intraday data, no order-level execution, no
+queue position, no partial fills.
+\textbf{What we have:} daily closes with next-bar execution, which is the most conservative
+realistic timing at daily frequency.
+
+\textbf{Why it matters.} Chapter~\ref{ch:multipletesting} shows the binding constraint on
+this entire research programme is \emph{statistical power}: $T^\ast=(z/\mathrm{SR}_d)^2$
+days. Moving to hourly bars multiplies $T$ per year by $\approx7$ and, more importantly,
+shortens half-lives from $\approx9.4$ days to hours, which raises the number of independent
+bets per year by one to two orders of magnitude. By the fundamental law
+\eqref{eq:fundamentallaw} that is where a weak per-bet IC becomes a testable book Sharpe.
+
+\textbf{Direction:} this is the one change that could plausibly turn the negative result
+positive --- and also the one that changes the problem entirely (microstructure costs,
+latency competition, queueing). \textbf{Fix:} an intraday data source and an execution
+simulator with fill modelling; the C++ engine's per-bar cost ($\approx600$\,ns) already
+supports $10^6$-bar simulations comfortably.
+
+\subsection{6. Breadth: hundreds of baskets instead of four}
+
+\textbf{Missing:} a systematic basket-construction rule applied across the whole universe.
+\textbf{What we have:} four hand-specified economically coherent baskets, chosen a priori by
+sub-industry.
+
+\textbf{Why it matters.} With four baskets the book has $\approx12$--$50$ independent bets a
+year and, per \eqref{eq:sharpetstat}, no chance of significance. With 200 disjoint baskets
+the book-level Sharpe of the same per-basket edge would be $\approx\sqrt{50}\times$ larger in
+$t$-statistic terms, and the relevant test becomes one test on the book rather than 200 tests
+on its parts. This is the cheapest path to a falsifiable experiment and it is why the C++
+engine's speed was worth building for.
+
+\textbf{Direction:} better power, and possibly a real (small) positive book Sharpe --- or a
+definitive negative, which is equally valuable. \textbf{Fix:} an automated
+basket-construction rule (sub-industry peers by market cap, or lasso-selected from the
+sector), run over the 195-name universe, with the full search audited under
+Chapter~\ref{ch:multipletesting}'s machinery and Benjamini--Hochberg FDR control rather than
+Bonferroni (Section~\ref{sec:mt:bonferroni}).
+
+\subsection{7. Alternative data and richer features}
+
+\textbf{Missing:} fundamentals, options-implied quantities, short-interest, ownership,
+news/sentiment, and any non-price input. \textbf{What we have:} 11 causal price-and-volume
+features (Section~\ref{sec:nonlinear:target}).
+
+\textbf{Why it matters.} The nonlinear verdict of Phase~\ref{ch:phase9} --- ``linear wins''
+--- is a statement about a feature set with little nonlinear structure to find. Short
+interest and borrow cost, options skew, and earnings-date proximity all plausibly interact
+nonlinearly with reversion speed, and they are the features that would make a GBM worth its
+variance. Without them, the honest conclusion is that nonlinearity is not detectable
+\emph{in prices alone at daily frequency}, not that it is absent.
+
+\textbf{Direction:} unknown; potentially much better, and the only route to a genuinely
+higher IC. \textbf{Fix:} a separate data infrastructure (vendors, licensing, point-in-time
+storage to avoid look-ahead in fundamentals restatements) --- a project of comparable size to
+this one.
+
+\subsection{8. Cross-asset integration}
+
+\textbf{Missing:} anything outside U.S.\ large-cap equities --- no rates, FX, credit,
+commodities, or futures; no cross-asset relative value; no hedging of the book's residual
+rate exposure with, e.g., Treasury futures.
+
+\textbf{Why it matters.} The 2022 loss (net Sharpe $-1.306$ in the selloff window) was
+driven by a macro factor. A cross-asset overlay would either hedge it or, better, monetise
+it: equity-bond and within-complex relative value in a rate shock is a different and
+complementary strategy. Real books are assembled across asset classes precisely because
+their stress periods differ.
+
+\textbf{Direction:} better tail behaviour, more diversification, more complexity.
+\textbf{Fix:} a distinct research programme; the engine's data layer would need futures roll
+and multi-currency handling.
+
+\subsection{9. Live capital allocation and operational feedback}
+
+\textbf{Missing:} everything about running money --- a live risk limit framework with
+kill-switches, prime-brokerage and clearing integration, position and cash reconciliation,
+corporate-action handling in real time, compliance and best-execution obligations, model
+monitoring and drift detection, and the human process that decides when to stop a strategy.
+
+\textbf{Why it matters.} A backtest's P\&L is a deterministic function of history; a live
+book's P\&L is the output of a control system with feedback, delays, and operational
+failure modes. The most common way a statistically sound relative-value strategy loses money
+in production is not that the signal decays but that a break goes undetected, a limit is
+breached during a data outage, or a position cannot be exited when the borrow is recalled.
+None of that is in scope here and none of it is captured by any number in this book.
+
+\textbf{Direction:} worse, always. \textbf{Fix:} an operational build, not a research one.
+The one piece that \emph{is} research and should be added first is drift detection: a
+monitoring statistic (e.g.\ a rolling DM test of live P\&L against backtest expectation) that
+triggers a review when the realized behaviour diverges from the model's.
+
+\subsection{10. Colocated, FPGA-level execution}
+
+\textbf{Missing:} any latency competition. \textbf{What we have:} a
+$\approx600$\,ns-per-bar simulation core on a shared 2-core sandbox, with per-stage
+percentiles measured to $\pm15.8\%$ bucket resolution.
+
+\textbf{Why it matters --- and why it does not, here.} Colocation and FPGA matter for
+strategies whose edge decays in microseconds. Ours decays over $\approx9.4$ \emph{days}: the
+half-life is eight orders of magnitude longer than the latency budget that colocation buys.
+The engine's low-latency design is therefore not an alpha claim; it is (i) a specification
+deliverable, (ii) the enabler of the breadth-first research programme of item 6 (a
+$10^6$-backtest scan), and (iii) an honest statement that the simulation cost is not the
+constraint on any conclusion in this book. Claiming otherwise would be the sort of
+over-claim this chapter exists to prevent.
+
+\subsection{Summary table of non-goals}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{p{0.30\linewidth}p{0.20\linewidth}p{0.40\linewidth}}
+\toprule
+Non-goal & Direction of bias & Cheapest credible fix \\
+\midrule
+Survivorship-bias-free universe & optimistic & historical membership + delisted prices \\
+Borrow / financing costs & optimistic & per-name loan-fee series + financing term in \eqref{eq:bt:pnl} \\
+Capacity analysis & silent & participation-constrained re-run, Sharpe vs AUM curve \\
+Multi-factor neutralisation & ambiguous & public factor set, neutralise in position construction \\
+Intraday frequency & \emph{could help} & intraday data + fill model; engine already fast enough \\
+Universe-wide breadth & \emph{could help} & automated basket rule over 195 names, FDR-controlled audit \\
+Alternative data & \emph{could help} & separate data infrastructure (point-in-time) \\
+Cross-asset integration & better tails & separate research programme \\
+Live operational loop & worse & not a research task; add drift monitoring first \\
+Colocation / FPGA & irrelevant at this half-life & none needed --- and none claimed \\
+\bottomrule
+\end{tabular}
+\end{center}

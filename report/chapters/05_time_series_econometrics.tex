@@ -1,0 +1,432 @@
+% =============================================================================
+%  CHAPTER 5 -- TIME-SERIES ECONOMETRICS: DEPENDENCE, UNIT ROOTS, COINTEGRATION, HAC
+% =============================================================================
+\section{Time-series econometrics: dependence, unit roots, cointegration, HAC}
+\label{ch:timeseries}
+
+Chapter~\ref{ch:ols} assumed the rows of $X$ and $\eps$ were exchangeable. In a time
+series they are not: today's value depends on yesterday's. This chapter builds the
+machinery for that dependence, because every statistical claim in Part~II passes through
+it.
+
+\subsection{Information sets, filters, and what ``causal'' means}
+\label{sec:ts:causality}
+
+Let $\mathcal F_t$ denote the information available at the end of bar $t$: all prices,
+volumes, and any other observable up to and including $t$. A quantity $z_t$ is
+\emph{adapted} to (or \emph{measurable with respect to}) $\mathcal F_t$ if it can be
+computed from that information --- informally, if a trader sitting at the close of day
+$t$ could write it down. A backtest is \emph{causal} or \emph{lookahead-free} if every
+decision at $t$ uses only $\mathcal F_t$-adapted quantities, and if execution happens at
+prices in $\mathcal F_{t+1}$.
+
+Three formulations of the same idea, in increasing strength:
+\begin{align}
+  \E[\eps_t\mid \mathcal F_{t-1}] &= 0 &&\text{(martingale difference: no predictable level)}, \label{eq:martdiff}\\
+  \E[\eps_t\eps_{t-\ell}] &= 0\ \ \forall \ell\ge1 &&\text{(serially uncorrelated)}, \label{eq:serialuncorr}\\
+  \eps_t \perp \mathcal F_{t-1} &&&\text{(independent: strongest, rarely true)}. \label{eq:indep}
+\end{align}
+\eqref{eq:martdiff} implies \eqref{eq:serialuncorr} but not conversely; neither implies
+\eqref{eq:indep}. Our residual $\hat\eps_t$ satisfies none of them --- it is deliberately
+serially correlated, because that correlation \emph{is} the mean reversion we trade
+($\E[\Delta\eps_{t+1}\mid\eps_t]<0$ when $\eps_t>0$). The discipline is therefore not
+``make the residual white noise'' but ``model the residual's dependence correctly and
+infer under it'', which is what HAC standard errors and the OU fit are for.
+
+\subsection{The lag operator and simple stationary models}
+\label{sec:ts:arma}
+
+Define $L x_t = x_{t-1}$, so $L^k x_t = x_{t-k}$ and polynomials in $L$ act naturally:
+$(1-\phi L)x_t = x_t - \phi x_{t-1}$.
+
+\paragraph{AR(1).} $x_t = \mu + \phi(x_{t-1}-\mu) + \eta_t$ with $\eta_t$ white noise of
+variance $\sigma_\eta^2$. Iterating backward from the stationary solution,
+$x_t-\mu=\sum_{j\ge0}\phi^j\eta_{t-j}$, which converges in mean square iff
+$\lvert\phi\rvert<1$ (geometric series $\sum\phi^{2j}=1/(1-\phi^2)$). Then
+\begin{equation}
+  \Var(x_t)=\frac{\sigma_\eta^2}{1-\phi^2},
+  \qquad
+  \gamma(\ell)=\frac{\sigma_\eta^2}{1-\phi^2}\,\phi^{\lvert\ell\rvert},
+  \qquad
+  \rho(\ell)=\phi^{\lvert\ell\rvert}.
+  \label{eq:ar1}
+\end{equation}
+Two facts to remember: the autocorrelation \emph{decays geometrically} at rate $\phi$,
+and the variance blows up as $\phi\to1$. The AR(1) is the discrete-time cousin of the
+OU process of Chapter~\ref{ch:ou}: $\phi=e^{-\theta\Delta t}$ exactly.
+
+\paragraph{MA($q$) and ARMA($p,q$).} $x_t=\eta_t+\theta_1\eta_{t-1}+\dots+\theta_q\eta_{t-q}$
+is always stationary (a finite sum of stationary terms); its ACF cuts off after lag $q$.
+An ARMA combines both: $\phi(L)x_t=\theta(L)\eta_t$. Stationarity requires the roots of
+$\phi(z)=0$ to lie outside the unit circle. We use these models implicitly --- the OU fit
+is an AR(1) fit --- and the Ljung--Box test below checks whether a residual's ACF is
+consistent with white noise, which is what an ARMA model of the residual would have to
+explain.
+
+\subsection{Unit roots and the Dickey--Fuller test}
+\label{sec:ts:adf}
+
+\subsubsection{Why the ordinary $t$-test fails at $\phi=1$}
+
+To test whether $x_t$ has a unit root, the natural approach is to estimate the AR(1)
+coefficient and $t$-test $H_0:\phi=1$. Write it in difference form: with
+$\delta=\phi-1$,
+\begin{equation}
+  \Delta x_t \;=\; \delta\, x_{t-1} + \eta_t ,
+  \qquad
+  \hat\delta = \frac{\sum_t x_{t-1}\Delta x_t}{\sum_t x_{t-1}^2},
+  \qquad
+  \hat t_\delta = \frac{\hat\delta}{\hat{\mathrm{se}}(\hat\delta)} .
+  \label{eq:df}
+\end{equation}
+Under $H_0$ ($\delta=0$), $x_t$ is a random walk, and the regressor $x_{t-1}$ is
+non-stationary. The ordinary CLT does not apply. Instead, using the functional CLT
+(Donsker's theorem) --- $\frac{1}{\sqrt T\sigma}x_{\lfloor Tr\rfloor}
+\xrightarrow{d} W(r)$, a standard Brownian motion on $[0,1]$ --- one obtains
+\begin{equation}
+  T\hat\delta \;\xrightarrow{\ d\ }\;
+  \frac{\tfrac12\bigl(W(1)^2-1\bigr)}{\int_0^1 W(r)^2\dd r},
+  \qquad
+  \hat t_\delta \;\xrightarrow{\ d\ }\;
+  \frac{\tfrac12\bigl(W(1)^2-1\bigr)}{\sqrt{\int_0^1 W(r)^2\dd r}} ,
+  \label{eq:dfdistribution}
+\end{equation}
+where the first identity follows from $x_T^2 = 2\sum x_{t-1}\Delta x_t + \sum(\Delta x_t)^2$
+(the discrete analogue of Itô's formula) and $\frac{1}{T^2}\sum x_{t-1}^2\to
+\sigma^2\int_0^1W^2$.
+
+Three consequences, all of them practical:
+\begin{enumerate}
+  \item The limit is a functional of Brownian motion, \emph{not} $\mathcal N(0,1)$, and it
+    has no closed-form density. Critical values must be simulated; Dickey and Fuller's
+    tables (and \code{statsmodels}'s \code{adfuller}) come from exactly that simulation.
+  \item The distribution is shifted \emph{left} of the normal: with a constant in the
+    regression, the 5\% critical value is $\approx-2.86$ rather than $-1.96$. Using the
+    normal cutoff would reject the unit-root null far too often.
+  \item $\hat\delta$ converges at rate $T$, not $\sqrt T$ (``super-consistency'').
+    Estimation is fast; \emph{inference} is non-standard. Both facts matter: they are why
+    a cointegrating regression's coefficients are trustworthy even though their
+    $t$-statistics are not textbook-normal.
+\end{enumerate}
+
+\subsubsection{The augmented test we actually run}
+
+If the errors in \eqref{eq:df} are autocorrelated (they will be), $\hat t_\delta$'s limit
+changes again. The \emph{augmented} Dickey--Fuller test fixes this by adding lagged
+differences until the residual is approximately white:
+\begin{equation}
+  \Delta x_t \;=\; a + \delta\,x_{t-1} + \sum_{\ell=1}^{p}\gamma_\ell\,\Delta x_{t-\ell}
+  + \eta_t ,
+  \qquad H_0:\delta=0\ \text{(unit root)},\quad H_1:\delta<0\ \text{(stationary)}.
+  \label{eq:adf}
+\end{equation}
+It is an ordinary OLS regression; only the \emph{distribution} of the $t$-statistic on
+$\delta$ is non-standard. Choices that matter and that we document:
+\begin{itemize}
+  \item \textbf{Deterministic terms.} Include a constant (drift) or a constant plus a
+    linear trend. Omitting a needed constant biases the test toward non-rejection;
+    including an unneeded trend destroys power. Our spreads are residuals of a regression
+    that already contains an intercept, so they are near-zero-mean by construction and we
+    test with a constant.
+  \item \textbf{Lag order $p$.} Chosen by an information criterion
+    ($\mathrm{AIC}=-2\log L+2k$, $\mathrm{BIC}=-2\log L+k\log T$; both trade fit against
+    parameter count, BIC more severely). Too small a $p$ leaves autocorrelation in
+    $\eta_t$ and invalidates the null distribution; too large a $p$ wastes degrees of
+    freedom and power.
+  \item \textbf{One-sidedness.} The alternative is $\delta<0$; we reject in the left tail
+    only.
+\end{itemize}
+
+\subsubsection{KPSS: the test with the opposite null}
+\label{sec:ts:kpss}
+
+\cite{kpss1992} decompose $x_t = \mu t + r_t + \eps_t$ with a random-walk
+component $r_t=r_{t-1}+v_t$ and stationary $\eps_t$, and test
+$H_0:\Var(v_t)=0$ (i.e.\ $x$ is \emph{stationary} around a deterministic trend). The
+statistic is built from partial sums of the detrended residuals
+$\hat u_t$ (residuals from OLS of $x$ on $[1,t]$):
+\begin{equation}
+  \mathrm{KPSS} \;=\; \frac{1}{T^2\hat\sigma^2_{\text{LR}}}
+  \sum_{t=1}^{T}\Bigl(\sum_{s=1}^{t}\hat u_s\Bigr)^{2},
+  \label{eq:kpss}
+\end{equation}
+with $\hat\sigma^2_{\text{LR}}$ a long-run variance estimate (Bartlett-weighted, as in
+\eqref{eq:hac}). Intuition: if $x$ is stationary, its cumulative deviation wanders a
+little; if $x$ has a unit root, the partial sums grow like $T^{3/2}$, and after dividing
+by $T^2$ the statistic stays large. The limit is again a Brownian functional
+($\int_0^1\!\bigl(\int_0^r W(s)\dd s\bigr)^2\!\dd r$-type), with critical values
+$\approx0.46$ (5\%, level version).
+
+\paragraph{Reading the two together.} Because the nulls are opposite, the pair gives a
+genuine 2$\times$2 verdict:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llll}
+\toprule
+ & \textbf{KPSS fails to reject} & \textbf{KPSS rejects} \\
+\midrule
+\textbf{ADF rejects} & stationary ($I(0)$) \checkmark & contradictory / structural break \\
+\textbf{ADF fails to reject} & low power (short sample, near-unit-root) & unit root ($I(1)$) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Phase~\ref{ch:phase6} lands in \emph{both} off-diagonal cells, and reporting that is the
+point. The static hedge residual: ADF $p=0.083$ (fails to reject), KPSS $p=0.01$
+(rejects) $\Rightarrow$ unit root. The causal rolling spread, full sample: ADF $p<10^{-3}$
+(rejects decisively), KPSS $p=0.01$ (also rejects) $\Rightarrow$ \emph{ambiguous} ---
+strong evidence against a unit root, but also against strict level-stationarity, the
+signature of a process that reverts fast but whose local mean moves (which is exactly
+what a rolling hedge produces). On the 2022+ subsample the same spread is ADF-reject /
+KPSS-fail-to-reject $\Rightarrow$ clean stationary. Chapter~\ref{ch:phase6} discusses
+this rather than hiding it behind a single verdict word.
+
+\subsection{Cointegration}
+\label{sec:ts:cointegration}
+
+\begin{definition}[Cointegration]
+Series $y_t, x_{1t},\dots,x_{nt}$, each $I(1)$, are \emph{cointegrated} if there exists
+$\beta$ such that $y_t - x_t^{\top}\beta$ is $I(0)$. $\beta$ is a cointegrating vector and
+the number of linearly independent such vectors is the \emph{cointegration rank} $r$.
+\end{definition}
+
+\begin{intuition}
+A drunk walking a dog on a leash: each wanders (both $I(1)$), but the distance between
+them is bounded (the leash, $I(0)$). Cointegration is the formal statement that two
+non-stationary series cannot drift arbitrarily far apart. For stat-arb it is the licence
+to trade: a stationary distance is a thing that reverts, and reversion is a thing you can
+bet on.
+\end{intuition}
+
+\subsubsection{Engle--Granger two-step}
+\label{sec:ts:eg}
+
+\begin{enumerate}
+  \item \textbf{Estimate the static long-run relation} by OLS:
+    $y_t=\alpha+x_t^{\top}\beta+\hat u_t$. Under cointegration $\hat\beta$ is
+    super-consistent ($T$-rate), so this step is reliable even though the usual inference
+    is not.
+  \item \textbf{Test the residual for a unit root} with ADF \eqref{eq:adf}. Rejecting
+    $H_0$ means $\hat u$ is stationary, i.e.\ the relation is cointegrating.
+\end{enumerate}
+The subtlety: the critical values are \emph{not} the plain Dickey--Fuller ones, because
+$\hat u$ uses an estimated $\hat\beta$ rather than the true one; the Engle--Granger
+tables (and \code{statsmodels}' \code{coint}) account for that, and depend on $n$ and on
+the deterministic terms. A second subtlety is \emph{asymmetry}: with $n>1$ regressors
+there may be several cointegrating vectors, and Engle--Granger finds at most one ---
+whichever the OLS step happens to identify. That limitation motivates Johansen.
+
+\subsubsection{Johansen: the VECM and the rank test}
+\label{sec:ts:johansen}
+
+Start from a $p$-lag VAR in levels for the $m$-vector $Z_t=(y_t,x_t^{\top})^{\top}$:
+$Z_t = c + \sum_{i=1}^p \Phi_i Z_{t-i} + \eta_t$. Subtracting $Z_{t-1}$ from both sides
+and regrouping gives the \emph{vector error-correction model}
+\begin{equation}
+  \Delta Z_t \;=\; c + \Pi Z_{t-1} + \sum_{i=1}^{p-1}\Gamma_i\,\Delta Z_{t-i} + \eta_t,
+  \qquad
+  \Pi \;=\; -\Bigl(I - \sum_{i=1}^p \Phi_i\Bigr) \;\in\; \R^{m\times m}.
+  \label{eq:vecm}
+\end{equation}
+The Granger representation theorem says: $Z_t$ is cointegrated with rank $r$ iff
+$\Pi=\alpha\beta^{\top}$ with $\alpha,\beta\in\R^{m\times r}$ of full column rank. Then
+$\beta^{\top}Z_{t-1}$ are the $r$ stationary error-correction terms and $\alpha$ holds the
+\emph{adjustment speeds} --- how fast each variable moves to restore equilibrium. This is
+precisely the structure a mean-reversion trader wants: $\beta$ gives the trade, $\alpha$
+gives the expected speed of convergence (and, if $\alpha_i\approx0$ for some name, that
+name does not participate in the correction and should not be relied on).
+
+Estimating $\Pi$ subject to $\rank(\Pi)=r$ is a reduced-rank regression, solved by
+canonical correlation analysis between $\Delta Z_t$ and $Z_{t-1}$ after partialling out
+the short-run $\Delta Z_{t-i}$ terms. The squared canonical correlations
+$\hat\lambda_1\ge\dots\ge\hat\lambda_m$ give the two statistics:
+\begin{align}
+  \text{trace:}\qquad
+  \tau_r &= -T\sum_{i=r+1}^{m}\log\bigl(1-\hat\lambda_i\bigr)
+  && H_0:\ \text{rank}=r \ \text{vs}\ H_1:\ \text{rank}>r, \label{eq:johansen:trace}\\
+  \text{max-eigenvalue:}\qquad
+  \mu_r &= -T\log\bigl(1-\hat\lambda_{r+1}\bigr)
+  && H_0:\ \text{rank}=r \ \text{vs}\ H_1:\ \text{rank}=r+1. \label{eq:johansen:max}
+\end{align}
+Both have non-standard Brownian-function limits with tabulated critical values depending
+on $m-r$ and the deterministic specification. In Phase~\ref{ch:phase6} the four-name
+log-price vector $(\text{ADBE},\text{CRM},\text{ADSK},\text{INTU})$ gives
+\textbf{rank $r=2$} at the 95\% level: two independent stationary combinations exist, so
+the basket is genuinely cointegrated rather than merely correlated --- but the trading
+spread we construct is only one of those two directions, and the test does not tell us it
+is the profitable one. That gap between ``cointegration exists'' and ``our spread is the
+cointegrating combination'' is a recurring theme of the honest findings.
+
+\subsection{Residual autocorrelation: Durbin--Watson and Ljung--Box}
+\label{sec:ts:autocorr}
+
+\paragraph{Durbin--Watson.}
+\begin{equation}
+  \mathrm{DW} \;=\; \frac{\sum_{t=2}^{T}(\hat\eps_t-\hat\eps_{t-1})^2}{\sum_{t=1}^{T}\hat\eps_t^2}.
+  \label{eq:dw}
+\end{equation}
+Expanding the numerator,
+$\sum(\hat\eps_t-\hat\eps_{t-1})^2 = \sum\hat\eps_t^2+\sum\hat\eps_{t-1}^2-2\sum\hat\eps_t\hat\eps_{t-1}
+\approx 2\sum\hat\eps_t^2(1-\hat\rho_1)$, hence
+\begin{equation}
+  \mathrm{DW}\;\approx\;2\bigl(1-\hat\rho_1\bigr)\ \in[0,4].
+  \label{eq:dw:rho}
+\end{equation}
+$\mathrm{DW}\approx2$ means no first-order autocorrelation; $\mathrm{DW}\to0$ means
+$\hat\rho_1\to+1$ (strong positive persistence); $\mathrm{DW}\to4$ means
+$\hat\rho_1\to-1$ (alternation). Its exact null distribution depends on $X$ (the famous
+inconclusive region between the $d_L$ and $d_U$ bounds), which is why the Ljung--Box
+portmanteau test is usually preferred.
+
+\paragraph{Ljung--Box.} Using the sample autocorrelations \eqref{eq:acf} of the residuals,
+\begin{equation}
+  Q(L) \;=\; T(T+2)\sum_{\ell=1}^{L}\frac{\hat\rho_\ell^{\,2}}{T-\ell}
+  \;\xrightarrow{\ d\ }\;\chi^2_{L}\quad\text{under }H_0:\rho_1=\dots=\rho_L=0 .
+  \label{eq:ljungbox}
+\end{equation}
+Why the odd $T(T+2)/(T-\ell)$ factor? Because $\hat\rho_\ell$ of \emph{residuals} has
+variance approximately $(T-\ell)/(T(T+2))$ rather than $1/T$: the small-sample correction
+that Ljung and Box introduced to fix the Box--Pierce statistic's size distortion. Under
+the null each $\sqrt{T(T+2)/(T-\ell)}\,\hat\rho_\ell$ is approximately standard normal,
+so the sum of $L$ squares is $\chi^2_L$.
+
+\begin{remark}[Interpreting our DW and $Q$ correctly]
+Phase~\ref{ch:phase6} measures $\mathrm{DW}=0.009$ for the static hedge and $0.147$ for
+the rolling spread, and $Q$ in the tens of thousands with $p\approx0$. By
+\eqref{eq:dw:rho} these imply $\hat\rho_1\approx0.995$ and $\approx0.93$: the residuals
+are almost perfectly persistent. For most econometric purposes that would be a disease.
+Here it is the \emph{diagnosis we are looking for} --- a persistent deviation that decays
+slowly is exactly a mean-reverting spread, and its decay rate is the OU $\theta$ of
+Chapter~\ref{ch:ou}. The cost of that persistence is that all i.i.d.-based inference on
+the spread is invalid, which is why the HAC correction is mandatory rather than
+decorative.
+\end{remark}
+
+\subsection{Heteroskedasticity: Breusch--Pagan and White}
+\label{sec:ts:heterosk}
+
+\paragraph{Breusch--Pagan.} Under $H_0$, $\Var(\eps_t\mid x_t)=\sigma^2$ (constant);
+under the alternative it is a function $h(x_t^{\top}\gamma)$. The Lagrange-multiplier
+principle gives a test that only requires the restricted fit: regress the scaled squared
+residuals $\hat\eps_t^2/\hat\sigma^2$ on $[1, z_t]$ (where $z_t$ are the suspected
+variance drivers, often $\hat\eps_t$'s own regressors) and use
+\begin{equation}
+  \mathrm{LM} \;=\; T\,R^2_{\text{aux}} \;\xrightarrow{\ d\ }\; \chi^2_{k}
+  \quad\text{under }H_0 .
+  \label{eq:bp}
+\end{equation}
+Derivation sketch: the LM statistic for a smooth restriction is
+$\hat\lambda^{\top}\mathcal I^{-1}\hat\lambda$, where $\hat\lambda$ is the score of the
+unrestricted parameters at the restricted estimate and $\mathcal I$ the information; for
+the Gaussian regression-with-varying-variance model this collapses to $TR^2$ of the
+auxiliary regression. It is an asymptotic identity, not a heuristic.
+
+\paragraph{White.} \cite{white1980} regresses $\hat\eps_t^2$ on \emph{all} of
+$\{1, x_{it}, x_{it}x_{jt}, x_{it}^2\}$, so the test has $k=n+n(n+1)/2$ degrees of
+freedom and detects heteroskedasticity of unspecified functional form --- and, as a side
+effect, general functional misspecification (if the conditional mean is wrong, the squared
+residuals will correlate with the regressors' nonlinear transforms). With $n=4$ that is
+$4+10=14$ auxiliary regressors; on 4{,}070 observations the test is very powerful, and
+indeed it rejects at $p<10^{-3}$.
+
+\begin{remark}[Honesty: powerful tests on big samples]
+With $T\approx4{,}000$, BP and White reject homoskedasticity for essentially any real
+financial series. A rejection here is not a discovery; it is a reminder that the
+homoskedastic covariance formula \eqref{eq:ols:varbeta} must not be used. The
+\emph{informative} number is how much the standard errors change, which is what
+Table~\ref{tab:diag_coint} reports: HAC shrinks $t_{\text{CRM}}$ from $29.5$ to $7.3$
+and $t_{\text{ADSK}}$ from $29.7$ to $9.4$ --- a factor of $\approx3$--$4$, i.e.\ the
+naive inference was overstating significance by roughly an order of magnitude in
+variance terms.
+\end{remark}
+
+\subsection{HAC standard errors: the sandwich, derived}
+\label{sec:ts:hac}
+
+\subsubsection{What we need to estimate}
+
+From \eqref{eq:sandwich}, with $\Var(\eps\mid X)=\Omega$,
+\[
+  \Var(\hat\beta) = (X^{\top}X)^{-1}\Bigl[\sum_{t}\sum_{s}x_tx_s^{\top}\,\Omega_{ts}\Bigr](X^{\top}X)^{-1},
+  \qquad \Omega_{ts}=\E[\eps_t\eps_s\mid X].
+\]
+Write the middle bracket as $\E\bigl[(\sum_t x_t\eps_t)(\sum_s x_s\eps_s)^{\top}\bigr]
+= \E[S_TS_T^{\top}]$ with the score $S_T=\sum_t x_t\eps_t$. Expanding by lag,
+\begin{equation}
+  \E[S_TS_T^{\top}] \;=\; \sum_{\ell=-(T-1)}^{T-1}\ \sum_{t}\ \E\bigl[x_t\eps_t\,\eps_{t-\ell}\,x_{t-\ell}^{\top}\bigr]
+  \;\approx\; T\Bigl[\Omega_0 + \sum_{\ell=1}^{\infty}\bigl(\Omega_\ell+\Omega_\ell^{\top}\bigr)\Bigr],
+  \label{eq:lrvarmatrix}
+\end{equation}
+where $\Omega_\ell = \E[\eps_t\eps_{t-\ell}x_tx_{t-\ell}^{\top}]$ is the lag-$\ell$
+autocovariance of the moment function. The infinite sum is the \emph{long-run variance}
+of Section~\ref{sec:prob:clt}, now in matrix form.
+
+\subsubsection{Truncation and the Newey--West estimator}
+
+Estimating every lag would be hopeless, so truncate at $L$ and weight:
+\begin{equation}
+  \widehat\Omega_{LR} \;=\; \hat\Omega_0 + \sum_{\ell=1}^{L} w_\ell
+  \bigl(\hat\Omega_\ell + \hat\Omega_\ell^{\top}\bigr),
+  \qquad
+  \hat\Omega_\ell = \frac{1}{T}\sum_{t=\ell+1}^{T}\hat\eps_t\hat\eps_{t-\ell}\,x_tx_{t-\ell}^{\top},
+  \label{eq:hac}
+\end{equation}
+\begin{equation}
+  \widehat\Var_{\text{HAC}}(\hat\beta) \;=\; \frac{T}{\,}\bigl(X^{\top}X\bigr)^{-1}
+  \widehat\Omega_{LR}\bigl(X^{\top}X\bigr)^{-1}\quad(\text{up to the }1/T\text{ convention}).
+  \label{eq:hac:var}
+\end{equation}
+Two requirements drive the choice of weights $w_\ell$:
+\begin{enumerate}
+  \item \textbf{Consistency:} $w_\ell\to1$ for fixed $\ell$ as $L\to\infty$, with
+    $L\to\infty$ and $L/T\to0$ (grow the truncation, but slower than the sample).
+  \item \textbf{Positive semi-definiteness:} a raw truncation ($w_\ell=1$ for
+    $\ell\le L$) can produce an indefinite $\widehat\Omega_{LR}$ and hence a negative
+    estimated variance. The \emph{Bartlett kernel}
+    \begin{equation}
+      w_\ell \;=\; 1-\frac{\ell}{L+1},\qquad \ell=0,\dots,L,
+      \label{eq:bartlett}
+    \end{equation}
+    makes \eqref{eq:hac} a non-negative-definite quadratic form by construction: it is
+    the Fourier transform at frequency zero of a Fejér kernel, which is non-negative.
+    (Gallant, and later Andrews, gave optimal kernels --- quadratic-spectral with
+    pre-whitening --- trading a little bias for variance.)
+\end{enumerate}
+
+\paragraph{Lag selection used here.} \code{scripts/statkit/hac.py} follows the common
+rule of thumb
+\begin{equation}
+  L \;=\; \Bigl\lfloor 4\bigl(T/100\bigr)^{2/9}\Bigr\rfloor ,
+  \label{eq:haclag}
+\end{equation}
+from \cite{neweywest1994automatic}: $L=13$ for $T=4{,}070$, $L=9$ for $T=1{,}169$. The
+exponent $2/9$ balances the truncation bias ($\propto L^2$) against the estimation
+variance ($\propto L/T$) for a smooth autocovariance. Since our residuals have
+autocorrelation out to lag $\sim20$ (Chapter~\ref{ch:phase6}), $L=13$ may under-correct
+slightly; the honest reading is that the HAC $t$-statistics reported are, if anything,
+optimistic --- and they are still $3$--$4\times$ smaller than the naive ones.
+
+\subsection{A note on volatility models (and why we don't fit one)}
+\label{sec:ts:arch}
+
+Heteroskedasticity in returns is not noise: it clusters, and the standard model is
+ARCH/GARCH. An ARCH(1) conditional variance is
+$\sigma_t^2 = \omega + a_1\eps_{t-1}^2$ with $a_1\in[0,1)$; GARCH(1,1) adds persistence,
+$\sigma_t^2=\omega+a_1\eps_{t-1}^2+b_1\sigma_{t-1}^2$, with the unconditional variance
+$\omega/(1-a_1-b_1)$ existing only if $a_1+b_1<1$. Its empirical signature is an ACF of
+\emph{squared} returns that decays slowly while the ACF of returns themselves is flat ---
+which is exactly what the BP/White rejections in Table~\ref{tab:diag_stationarity} are
+detecting.
+
+We test for heteroskedasticity, correct inference for it (HAC), and condition
+performance on volatility regimes (Phase~\ref{ch:phase7}'s vol-tercile decomposition),
+but we do \emph{not} fit a GARCH to standardize the signal. Reasons: (i) a GARCH-filtered
+spread is a different strategy, and adding it would multiply the hypothesis count $M$
+that Chapter~\ref{ch:multipletesting} has to pay for; (ii) at daily frequency with a weak
+signal, the extra parameters buy variance without buying bias; (iii) the OU half-life
+estimate is robust to the level of volatility because it is estimated on the
+variance-standardised $z$-score. Stated as future work in Chapter~\ref{ch:conclusion}:
+volatility-targeted position sizing is the single most promising untested variant,
+because it attacks the same cost-drag problem from the sizing side rather than the
+signal side.

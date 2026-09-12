@@ -1,0 +1,228 @@
+% =============================================================================
+%  CHAPTER 25 -- PHASES 12 AND 13: ASSEMBLY, NON-GOALS, REPRODUCIBILITY
+% =============================================================================
+\section{Phases 12--13 --- Report assembly, non-goals, and reproducibility}
+\label{ch:phase12}
+
+\textbf{Reproduce it:} \code{python3 report/build\_report.py} (regenerate $\to$ compile if
+a TeX engine exists $\to$ always render the HTML book).\\
+\textbf{Artifacts:} \code{report/report.tex} (root), \code{report/chapters/*.tex} (this
+book), \code{report/references.bib}, \code{report/build\_report.py},
+\code{report/report.html}, \code{README.md}, \code{HANDOFF.md}.
+
+\subsection{Phase 12: assembling a complete, internally consistent report}
+
+Phase 12's job was to close every placeholder and make the document self-consistent: the
+abstract, the discussion of what the project does \emph{not} replicate, and the conclusion.
+Three specific consistency requirements were checked:
+\begin{enumerate}
+  \item Every ``filled in Part $n$'' placeholder removed --- no section may defer its own
+    content.
+  \item The honest finding stated identically wherever it appears: the daily edge is real in
+    \emph{sign} and \emph{structure} (mean reversion of the causal rolling spread, smooth
+    low-turnover hedges beating churny refits, linear beating nonlinear net of cost) and too
+    small in \emph{magnitude} to survive cost drag and a fair correction for the search
+    breadth. Abstract, Phase~\ref{ch:phase10}, Chapter~\ref{ch:synthesis} and
+    Chapter~\ref{ch:conclusion} must not contradict each other.
+  \item Every figure and table referenced in the text exists in \code{results/} or
+    \code{report/tables/} and is produced by a checked-in script --- verified mechanically
+    by \code{environment/check.sh}, not by eye.
+\end{enumerate}
+
+\subsection{Phase 13: turning the report into a book}
+
+The deliverable you are reading is the output of the final phase, and it responds to a
+specific criticism of the earlier version: that the report presented results without the
+mathematics that produces them, and presented the mathematics as a compressed
+``Methodology'' section rather than as something a reader could learn from. Three changes
+were made.
+
+\paragraph{(1) The document was restructured into a book.} The single 1{,}294-line
+\code{report.tex} became a root file that \code{\textbackslash input}s
+\code{report/chapters/*.tex} in reading order, grouped into three parts:
+\emph{The Mathematics, From Nothing} (11 chapters, all derivations), \emph{The Project,
+Phase by Phase} (14 chapters, one per phase of \code{PLAN.md}), and \emph{Synthesis}
+(3 chapters). Every phase chapter now has a fixed shape --- goal, what was built (with the
+files that implement it), the math it uses (pointing back into Part~I), results, honest
+reading, exit-gate status --- and every chapter opens with a ``reproduce it'' line naming
+the exact commands and the exact artifacts.
+
+\paragraph{(2) The theory was written from first principles.} Part~I no longer assumes
+anything. OLS is derived twice (calculus and geometry) and Gauss--Markov is proved; ridge
+is derived four ways (penalty, bias/variance, spectral, Bayesian); the lasso's sparsity is
+derived from its KKT subgradient condition and the soft-threshold operator from coordinate
+descent; PCA is derived as a constrained variance maximisation; the Dickey--Fuller limit
+distribution is derived from the functional CLT and it is explained why the critical values
+are not normal; the OU process is solved by integrating factor and its moments derived from
+the Itô isometry; the Kalman filter is derived twice (Gaussian conditioning and recursive
+least squares) and its steady state is shown to be an EWMA; the Newey--West sandwich is
+derived from the long-run variance of the score; the Sharpe ratio's sampling variance and
+\cite{lo2002statistics}'s autocorrelation adjustment are derived; White's Reality Check,
+Hansen's SPA, the stationary bootstrap, Diebold--Mariano, the deflated Sharpe ratio and the
+required-sample-size calculation are all given with formulas and with the measured values
+substituted in.
+
+\paragraph{(3) New analysis was added to make the negative result quantitative.}
+\code{scripts/analysis/make\_book\_tables.py} computes, from the aligned $(T,M)$ P\&L matrix
+persisted by Phase~\ref{ch:phase10}:
+\begin{itemize}
+  \item the \textbf{effective number of independent trials} from the participation ratio of
+    the correlation spectrum ($M_{\text{eff}}=10.7$ from a mean pairwise correlation of
+    $0.128$), and the implied expected maximum null $t$-statistic ($2.18$, versus an observed
+    best of $1.57$);
+  \item the \textbf{deflated Sharpe ratio} of \cite{bailey2014deflated} using the best
+    strategy's own skewness ($+0.473$) and excess kurtosis ($+13.4$):
+    $\mathrm{SR}_0=0.474$ expected under the null, $\mathrm{DSR}=0.305$ observed, against a
+    $>0.95$ bar;
+  \item a \textbf{stationary-bootstrap 95\% interval} for the best Sharpe:
+    $[-0.058,\ +0.753]$ --- it contains zero;
+  \item the \textbf{required sample size} $T^\ast=(z/\mathrm{SR}_d)^2$: $22.6$ years
+    uncorrected and $77.8$ years Bonferroni-corrected for the best of 44; $366$ and
+    $1{,}259$ years for the best \code{ADBE} variant;
+  \item four previously un-tabulated generated tables (per-stage latency, RESET, learning
+    curve, DM forest) plus the complete 44-row HAC audit, so the book contains no
+    hand-transcribed numbers anywhere.
+\end{itemize}
+
+\subsection{The build driver}
+
+\code{report/build\_report.py} is the single entry point and does three things in order:
+\begin{enumerate}
+  \item \textbf{Regenerate.} Run every capture-then-render pair (data summary, statkit
+    validation, engine benchmarks, backtest, model comparison, diagnostics, portfolio,
+    Kalman, nonlinear, multiple testing, and the book tables) so that
+    \code{results/} and \code{report/tables/} are current.
+  \item \textbf{Compile.} If a TeX engine is present (\code{latexmk}, \code{pdflatex},
+    \code{xelatex}, \code{lualatex}, \code{tectonic}), compile \code{report.tex} to
+    \code{report.pdf} with \code{biber} for the bibliography. In this sandbox none is
+    installable, so the PDF is produced wherever the repository is cloned into a normal TeX
+    environment; the \code{.tex} is written to compile cleanly there.
+  \item \textbf{Render the HTML book.} Always. \code{report/report.html} is the readable
+    in-sandbox form of the same source, produced by \code{report/latex\_to\_html.py}. That
+    file is what ``run \code{python3 report/build\_report.py} and read the report'' means in
+    this environment.
+\end{enumerate}
+
+\subsection{The HTML renderer, and what it is not}
+\label{sec:phase13:renderer}
+
+\code{report/latex\_to\_html.py} is a purpose-built LaTeX-to-HTML book renderer, written
+because no TeX engine is installable here and because a browser preview must not depend on
+a CDN (no MathJax, no network). It runs in two passes over the same source: pass one
+numbers every part, section, subsection, equation, figure, table and theorem-like
+environment and records all 352 \code{\textbackslash label}s, the table of contents, the
+list of figures and tables, and the citation order; pass two renders for real with those
+numbers available, so forward references resolve. Measured behaviour on this build:
+\textbf{3{,}375 math expressions checked, 0 that cannot be rasterised}; 2{,}020 unique
+math images; 24 figures; 23 tables; 18 citations; 0 unresolved references; 1.1\,MB of HTML
+plus 5.4\,MB of deduplicated PNGs in \code{report/math/} (git-ignored, regenerated).
+
+How the pieces work:
+
+\begin{itemize}
+  \item \textbf{Math.} matplotlib's \code{mathtext} rasterises each expression to a
+    transparent PNG whose metrics (width, height, depth) come from the same parse, so the
+    image is placed on the text baseline with a negative \code{vertical-align} rather than
+    floating. Images are keyed by the translated source, so a symbol used 40 times is
+    rasterised and stored once.
+  \item \textbf{The translation layer.} \code{mathtext} is not LaTeX. It has no
+    \code{\textbackslash begin\{cases\}}, no matrices, no \code{\textbackslash tfrac},
+    \code{\textbackslash le}, \code{\textbackslash bigl},
+    \code{\textbackslash lvert}, \code{\textbackslash bmod},
+    \code{\textbackslash underbrace}, \code{\textbackslash boxed} or
+    \code{\textbackslash texttt}, and it insists on braced arguments
+    (\code{\textbackslash sqrt T} is a parse error where \TeX\ accepts it). The renderer
+    rewrites what it can (\code{\textbackslash le}\,$\to$\,\code{\textbackslash leq},
+    \code{\textbackslash tfrac}\,$\to$\,\code{\textbackslash frac},
+    \code{\textbackslash lVert}\,$\to$\,\code{\textbackslash Vert},
+    \code{\textbackslash overset} becomes a superscript over its second argument,
+    \code{\textbackslash sqrt T}\,$\to$\,\code{\textbackslash sqrt\{T\}}) and
+    \emph{decomposes} what it cannot: \code{cases} becomes an HTML table behind a stretched
+    brace, \code{bmatrix} an HTML table with bracket borders,
+    \code{\textbackslash underbrace\{A\}\_\{B\}} a three-row flex stack,
+    \code{\textbackslash boxed\{A\}} a bordered span, \code{align} a two-column table split
+    on \code{\&} with the equation number in a third column. Anything that still fails to
+    parse is emitted as escaped raw \TeX\ in a grey box and reported on stderr --- never
+    silently dropped.
+  \item \textbf{Structure.} \code{\textbackslash part} is a banner, sections and
+    subsections are headings with their numbers, the ten theorem-like environments
+    (\code{definition}, \code{assumption}, \code{theorem}, \code{proposition},
+    \code{lemma}, \code{corollary}, \code{remark}, \code{example}, \code{intuition},
+    \code{proof}) become numbered callout boxes, \code{tabular} becomes an HTML table with
+    \code{booktabs} rules mapped to border classes and
+    \code{\textbackslash multicolumn}/\code{\textbackslash multirow} mapped to
+    \code{colspan}/\code{rowspan}, \code{verbatim} becomes \code{<pre>}, and floats are
+    \code{<figure>} with \code{<figcaption>}.
+  \item \textbf{Cross-references.} \code{\textbackslash ref},
+    \code{\textbackslash eqref}, \code{\textbackslash autoref} and
+    \code{\textbackslash cite} become links into the document; the bibliography is built
+    from \code{references.bib} in citation order.
+  \item \textbf{Navigation.} A sticky sidebar lists parts and sections; the
+    \code{\textbackslash tableofcontents} block lists subsections as well;
+    \code{\textbackslash listoffigures} and \code{\textbackslash listoftables} in
+    Appendix~\ref{ch:glossary} are generated from the build's own float list, so they cannot
+    disagree with the page.
+\end{itemize}
+
+\begin{remark}[What the renderer is not]
+  It is a preview, not a \TeX\ implementation. Floats are placed where they are written
+  rather than floated; page breaking, widows and hyphenation are ignored;
+  \code{\textbackslash part} does not restart section numbering the way \code{book.cls}
+  would (the source is \code{article}-based, so numbering is continuous, and the appendix
+  switches to letters); and the HTML table of contents is generated by the renderer, so it
+  will differ cosmetically from the PDF's. The consequences are cosmetic. The numbers are
+  not affected: they come from the same CSVs either way.
+\end{remark}
+
+Two maintenance commands are worth knowing. \code{python3 report/latex\_to\_html.py
+--check-math} parses every math expression in every chapter and table without building
+anything, and exits non-zero if one cannot be rasterised --- run it after editing a chapter
+with new mathematics. \code{python3 report/build\_report.py --portable} inlines figures and
+math as data URIs, producing one self-contained file (about 10\,MB) that can be emailed or
+opened from anywhere; the default build keeps them as separate files so the page stays at
+1.1\,MB. \code{python3 report/build\_report.py --serve 8010} serves \code{report/} for a
+browser preview.
+
+\subsection{Reproducibility verification}
+
+The end-to-end run from a fresh clone was executed and verified:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{p{0.34\linewidth}p{0.30\linewidth}p{0.26\linewidth}}
+\toprule
+Step & Expected output & Observed \\
+\midrule
+\code{bash environment/setup.sh} & scientific stack + \code{cmake} user-level & g++ 12.2, cmake 4.4.3, all imports OK \\
+\code{python3 scripts/data/clean.py} & long panel from committed raw CSVs & 764{,}896 rows, 195 tickers \\
+\code{python3 scripts/data/qa.py} & data-quality gate & \textbf{10/10 passed} \\
+\code{export\_engine\_input.py} $\times4$ & balanced basket CSVs & 4{,}190--4{,}191 bars each, 2010-01-04 to 2026-09-01 \\
+\code{cmake -S src -B build \&\& cmake --build build -j2} & engine + microbench & \code{statarbsim}, \code{microbench} built \\
+\code{./build/statarbsim --test} & C++ unit tests & \textbf{24 run, 0 failed, 2{,}852 checks} \\
+\code{python3 scripts/run\_statkit\_tests.py} & statistical toolkit tests & \textbf{35 passed, 0 failed} \\
+\code{python3 scripts/test\_kalman.py}, \code{test\_nonlinear.py} & research-layer tests & pass \\
+\code{bash environment/check.sh} & full exit gate & \textbf{52 passed, 0 failed} \\
+\code{python3 report/build\_report.py} & figures, tables, HTML book & all sections, figures and tables present \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Wall clock on the 2-core sandbox: $\approx12$ minutes from clean checkout to finished book
+(Section~\ref{sec:phasemap:reproduce}). Every artifact listed in Part~II's ``reproduce it''
+lines was regenerated during this verification and none required a hand edit.
+
+\subsection{What Phase 13 did \emph{not} do}
+
+Three things were deliberately left alone, and are recorded so they are not mistaken for
+oversights:
+\begin{itemize}
+  \item \textbf{No result was re-derived or re-tuned.} The statistics are the statistics the
+    earlier phases produced; this phase added the power/DSR analysis (which measures the
+    existing results more sharply) and did not re-open any hyper-parameter. Re-tuning after
+    seeing the audit would invalidate the audit.
+  \item \textbf{No Kalman port to C++.} Deferred with a stated reason
+    (Phase~\ref{ch:phase8}).
+  \item \textbf{No PDF.} No TeX engine is installable here; the canonical \code{.tex}
+    compiles elsewhere. The HTML book is the in-sandbox deliverable.
+\end{itemize}

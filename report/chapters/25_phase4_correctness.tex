@@ -1,0 +1,153 @@
+% =============================================================================
+%  CHAPTER 17 -- PHASE 4: THE CORRECTNESS CORE
+% =============================================================================
+\section{Phase 4 --- The correctness core of the engine}
+\label{ch:phase4}
+
+\textbf{Reproduce it:} \code{python3 scripts/analysis/capture\_backtest.py \&\& python3
+scripts/plotting/render\_backtest.py}; also \code{./build/statarbsim --backtest
+data/processed/engine/ADBE.csv out.csv 120 2.0 0.5 0.001}.\\
+\textbf{Math used:} Sections~\ref{sec:bt:recursion}--\ref{sec:bt:cost},
+\ref{sec:sys:accuracy}; equations~\eqref{eq:saa:regression}--\eqref{eq:saa:policy},
+\eqref{eq:cost:proportional}, \eqref{eq:impact}.\\
+\textbf{Artifacts:} \code{src/engine/spread\_backtest.h},
+\code{results/tables/backtest\_summary.csv}, \code{results/backtests/},
+\code{results/figures/\{equity\_curve,cost\_sensitivity\}.png},
+\code{report/tables/backtest\_base.tex}.
+
+\subsection{Goal}
+
+Make the simulation loop \emph{correct} before making it interesting: walk-forward,
+next-bar execution, cost-aware, delisting- and warm-up-safe, and cross-checked against a
+brute-force reference. Then produce the first real result.
+
+\subsection{The loop, exactly as implemented}
+
+\code{src/engine/spread\_backtest.h} iterates bars $t=W+1,\dots,T-1$ and at each bar
+performs, in this order:
+
+\begin{enumerate}
+  \item \textbf{Update the hedge} with bar $t-1$: push the feature row
+    $[1,\log P^{1}_{t-1},\dots,\log P^{n}_{t-1}]$ and target $\log P^{T}_{t-1}$ into the
+    ring, evicting the oldest, and apply the rank-1 accumulator update
+    \eqref{eq:rank1update}. Solve with Cholesky (plus $\lambda I$ if ridge) to obtain
+    $\hat\alpha_{t},\hat\beta_{t}$ --- the hedge that will score bar $t$.
+  \item \textbf{Score bar $t$}: form $S_t$ by \eqref{eq:saa:spread}, update the running
+    mean and variance of $S$ over the window, and compute $z_t$ by \eqref{eq:saa:z}.
+  \item \textbf{Decide}: apply the two-band policy \eqref{eq:saa:policy} to obtain the
+    desired direction for the position that will be \emph{active on bar $t+1$}.
+  \item \textbf{Execute and pay}: if the direction changed, trade at bar $t+1$ and charge
+    $c\cdot\lVert q_{t+1}-q_t\rVert_1$ plus the square-root impact term \eqref{eq:impact}.
+  \item \textbf{Accumulate}: gross and net P\&L, NAV paths, trade count, holding-period
+    counter, turnover, cost ledger, and the per-stage latency histogram.
+\end{enumerate}
+
+The ordering is the whole correctness argument. Steps 1--2 use only
+$\mathcal F_{t-1}$ plus bar $t$'s own prices for \emph{scoring} (never for fitting);
+step 3's decision is executed in step 4 at the next bar. Equivalently: the hedge is
+$\mathcal F_{t-1}$-measurable, the signal is $\mathcal F_t$-measurable, and the resulting
+P\&L accrues on $\mathcal F_{t+1}$ prices --- the recursion of \eqref{eq:bt:pnl}.
+
+\subsection{Edge cases, and why each one is a silent killer}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{0.24\linewidth}p{0.36\linewidth}p{0.32\linewidth}}
+\toprule
+Edge case & What goes wrong if ignored & How it is handled / tested \\
+\midrule
+Window not yet full ($t<W$) & OLS on 5--20 observations gives wildly unstable betas, which produce enormous fake $z$-scores and fake trades in the first months & the regression reports ``not ready'' until $W$ bars are present; \code{test\_window\_not\_yet\_full} and \code{test\_backtest\_no\_trade\_when\_too\_short} \\
+Signal-day execution & the strategy buys the mispricing at the price that defines it, capturing the entire spread for free & one-bar delay; \code{test\_backtest\_one\_bar\_delay\_no\_lookahead} manufactures a single large mispricing and asserts the position is inactive on the signal day \\
+Delisted / missing name & a stale forward-filled price makes the spread look like it reverted & strict balanced-panel export (Phase~\ref{ch:phase1}) drops any date with a missing name; no forward fill anywhere in the pipeline \\
+Cost sign error & net P\&L exceeds gross & \code{test\_backtest\_costs\_never\_improve\_net} asserts net $\le$ gross bar-by-bar for every $c\ge0$ \\
+Accumulator drift & the incremental $X^{\top}X$ departs from truth over thousands of bars and the hedge slowly corrupts & brute-force cross-check to $10^{-8}$ at every window position (Section~\ref{sec:sys:accuracy}); \code{test\_rolling\_eviction\_matches\_recomputed\_sliding} \\
+Sizing drift & dollar neutrality lost as betas change & every open position is rescaled by the grossing factor \eqref{eq:grossing} so gross notional is exactly \$1; exposures recomputed and reported \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The first real result}
+
+Target \code{ADBE} against \{\code{CRM}, \code{ADSK}, \code{INTU}\}, 4{,}190 common bars
+(2010-01-04 to 2026-09-01), $W=120$, $z_{\text{entry}}=2.0$, $z_{\text{exit}}=0.5$,
+executed on the next bar, with a proportional cost swept over $c\in\{0,5,10,20,50\}$ bps
+one-way.
+
+\input{tables/backtest_base.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/equity_curve.png}
+\caption{Gross versus net log NAV of the spread strategy on \code{ADBE} versus
+\{\code{CRM}, \code{ADSK}, \code{INTU}\}, 2010--2026, at 10\,bps one-way. The gap between
+the two curves \emph{is} the cost drag of equation~\eqref{eq:costdrag}.}
+\label{fig:equity_curve}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.78\linewidth]{figures/cost_sensitivity.png}
+\caption{Annualised net Sharpe as a function of one-way transaction cost. The zero
+crossing --- the strategy's cost break-even --- is $\approx11$\,bps.}
+\label{fig:cost_sensitivity}
+\end{figure}
+
+The measured headline numbers:
+\begin{itemize}
+  \item \textbf{Gross}: annualised return $3.02\%$, Sharpe $0.385$, maximum drawdown
+    $30.6\%$, $198$ round trips, average holding period $16.2$ bars.
+  \item \textbf{Net at 10\,bps}: annualised return $0.38\%$, Sharpe $0.050$, maximum
+    drawdown $41.9\%$, cumulative cost $43.9\%$ of gross notional traded.
+  \item \textbf{Cost sensitivity}: net Sharpe $0.385\to0.219\to0.050\to-0.293\to-1.263$
+    at $c=0,5,10,20,50$ bps. Break-even one-way cost $\approx11$ bps.
+\end{itemize}
+
+\subsection{Honest reading}
+
+Three things about this result deserve to be said out loud.
+
+\paragraph{(1) The gross Sharpe is respectable and the net Sharpe is not.}
+$0.385$ gross over sixteen years would be a fine strategy. $0.050$ net is indistinguishable
+from zero: the standard error of a sixteen-year daily Sharpe is $\approx0.245$
+(equation~\eqref{eq:sharpevar}). The entire gross edge --- $3.02\%$ per year on \$1 gross
+--- is $2.64\%$ per year of cost, i.e.\ \textbf{87\% of the gross return is paid away},
+exactly as \eqref{eq:costdrag} predicts from $11.9$ trades/year at 20\,bps round trip.
+
+\paragraph{(2) Drawdown gets \emph{worse} with costs.} Max drawdown rises from $30.6\%$
+(gross) to $41.9\%$ (net at 10 bps) to $181.6\%$ (net at 50 bps, i.e.\ the NAV falls by
+more than its own initial value across the sample because the strategy is a leveraged
+loser at that cost). Cost is not a uniform haircut on the return series; it compounds into
+the path statistics, which is why gross and net must both always be reported.
+
+\paragraph{(3) One basket is an anecdote.} $198$ trades over 16.6 years is
+$\approx12$ independent bets per year (Section~\ref{sec:nonlinear:fundamentallaw}), so
+even a true Sharpe of $0.4$ would take $\approx25$ years to confirm. The correct response
+is not to tune this basket until it looks good --- that is precisely the data snooping of
+Chapter~\ref{ch:multipletesting} --- but to (i) build a book of disjoint baskets
+(Phase~\ref{ch:phase7}), (ii) test whether a better hedge estimator improves net rather
+than gross performance (Phase~\ref{ch:phase5}), (iii) verify that the spread is genuinely
+stationary and measure its half-life (Phase~\ref{ch:phase6}), and (iv) audit the whole
+search (Phase~\ref{ch:phase10}). That is the sequence the remaining phases follow, and it
+was set by this result.
+
+\subsection{Cross-implementation check}
+
+The same experiment was run through the Python research path
+(\code{scripts/model/baseline\_models.py::walk\_forward} + \code{simulate}) and the C++
+engine. Full-sample net Sharpe agrees to three decimals ($0.050$ both ways) --- the
+evidence that the two implementations are the same experiment, so that any difference
+between estimators in Phase~\ref{ch:phase5} is a model effect and not a harness artifact.
+This check is the reason the report's later tables can be produced by the Python path
+(which is easier to sweep) without invalidating the C++ engine's role as the simulation
+core.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] incremental regression matches brute force to $10^{-8}$;
+  \item[\checkmark] no-lookahead property tested (signal-day inactivity assertion);
+  \item[\checkmark] gross and net P\&L both computed, and net $\le$ gross asserted
+    bar-by-bar;
+  \item[\checkmark] edge-case unit tests pass (window not full, too-short history, cost
+    sign);
+  \item[\checkmark] \code{results/tables/backtest\_summary.csv} and both figures produced
+    by code from a real-data run.
+\end{itemize}

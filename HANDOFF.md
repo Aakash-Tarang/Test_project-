@@ -1,70 +1,149 @@
-# HANDOFF — Next session: **Part 13 — Finalization & Future Extensions**
+# HANDOFF — All 14 parts complete; the book is the deliverable
 
-> Read this entire file first.
+> Read this entire file first. It is the state of the repository, what was verified, and
+> what a future session should do next.
 
 ## 1. Context
 
-Incremental **Multi-Asset Statistical Arbitrage** project. Done: **Part 0** plan/env, **Part 1** data (Yahoo 195-name, 2010-2026), **Part 2** statkit, **Part 3** C++ engine skeleton + latency + initial architecture, **Part 4** correctness core (real-data spread backtest), **Part 5** baseline model comparison, **Part 6** statistical diagnostics, **Part 7** portfolio book + risk controls, **Part 8** Kalman time-varying hedge, **Part 9** nonlinear extension + RESET, **Part 10** multiple-testing correction + Diebold–Mariano. Now: **Part 12**. Work **only** on `arena/01a070da-test-project`; commit/push only there. Plan: `PLAN.md`.
+Incremental **Multi-Asset Statistical Arbitrage** project. **Parts 0–13 are all done**:
+plan/env, data (Yahoo 195-name, 2010–2026 total-return panel), `statkit`, the C++ engine,
+the correctness core, baseline model comparison, diagnostics, the portfolio book, the
+Kalman hedge, nonlinear extensions, the multiple-testing audit, architecture/latency,
+report assembly, and finalization.
 
-> NOTE: the sandbox can be re-cloned between sessions (local branch may sit at the base commit with only README tracked). Recovery (used repeatedly): `git fetch origin '+refs/heads/*:refs/remotes/origin/*'` then `git reset --hard origin/arena/01a070da-test-project`; then `bash environment/setup.sh`; `bash scripts/data/run_pipeline.sh`; `bash environment/check.sh` regenerates all git-ignored `results/`, `data/processed/`, `build/` outputs (~14 min). Re-export basket CSVs if `data/processed/engine/*.csv` missing: `python3 scripts/data/export_engine_input.py --target <T> --basket ...` for ADBE/AVGO/GS/CAT. If `scripts/model|statkit|analysis|plotting` or `report/` are missing, do this recovery, don't rewrite the parts.
+The last session did two things beyond Part 13 as originally scoped:
 
-## 2. Environment (re-verify each session)
+1. **Rewrote the report as a book.** `report/report.tex` is now a root file that
+   `\input`s 29 chapter files from `report/chapters/` (front matter, Part I theory from
+   first principles, Part II phase-by-phase, Part III synthesis, four appendices). The old
+   single-file report prose is recoverable with `git show a9e9f4a:report/report.tex`.
+2. **Wrote a LaTeX→HTML book renderer** (`report/latex_to_html.py`) so the whole book is
+   readable in this sandbox, which has no TeX engine. `report/build_report.py` drives it.
 
-`export PATH="$HOME/.local/bin:$PATH"` then `bash environment/check.sh`. **Part 11 verified**: §9 System Architecture & Latency complete and internally consistent. C++ unit tests **24 run / 0 failed, 2852 checks**; statkit **35/35** incl. new Diebold–Mariano `test_forecast.py`; report §9 designed + §9 figures (latency_hist.png, cache_bench.png) generated from live runs and wired into build; Part 10 multiple-testing correction fully documented with honesty gate. **52/52 PASS** maintained. Pip is PEP-668 → `--user --break-system-packages`; **no TeX engine** (LaTeX canonical + HTML preview). Only pypi + GitHub reachable. Build `cmake -S src -B build && cmake --build build -j2`.
+Work happens on the session branch (currently `arena/01a09676-test-project`; earlier
+sessions used `arena/01a070da-test-project`). Never push to a different branch than the
+one the session is tracking.
 
-## 3. Part 12 delivered (report sections finalized)
+> **Sandbox recovery** (used repeatedly): the workspace can be re-cloned between sessions.
+> `git fetch origin '+refs/heads/*:refs/remotes/origin/*'` then
+> `git reset --hard origin/<session-branch>`; then `bash environment/setup.sh`;
+> `export PATH="$HOME/.local/bin:$PATH"`; `bash scripts/data/run_pipeline.sh`;
+> `bash environment/check.sh` regenerates all git-ignored `results/`, `data/processed/` and
+> `build/` outputs (~14 min). Re-export basket CSVs if `data/processed/engine/*.csv` is
+> missing: `python3 scripts/data/export_engine_input.py --target <T> --basket ...` for
+> ADBE / AVGO / GS / CAT.
 
-- **`report/report.tex`** §9 updated: design principles and rationale now mention `src/portfolio/risk.h` (inverse-vol weighting with per-name concentration caps, water-fill rebalancing, used by Part 7 and unit-tested) and signal/spread components from Parts 4–9 (Kalman filter, rolling regressions, nonlinear gates) integrated through the same causal pipeline and documented in Sections 8 and 9.
-- **§9 traceability**: `results/tables/engine_latency.csv`, `results/tables/engine_bench.csv`, `results/figures/latency_hist.png`, `results/figures/cache_bench.png`, and `report/tables/engine_bench.tex` all produced by `scripts/analysis/capture_engine_bench.py` + `scripts/plotting/render_engine_results.py` from real C++ runs (`statarbsim --demo` and `microbench`). Wired into `report/build_report.py` regeneration loop and referenced by §9 figures/inline text.
-- **Microbenchmarks traceable**: vector-vs-deque (deque/vector = 1.264x) and SoA-vs-AoS (aos/soa = 1.152x) from `build/microbench`; p50/p95/p99 latency histogram (regression_update p50 ≈ 518 ns, signal_generation p50 ≈ 28 ns, order_placement p50 ≈ 28 ns) from `build/statarbsim --demo`. All numbers from live runs, not hand-typed.
-- **§9 narrative**: design principles list extended with a sentence about post-Part-3 modules; architecture claims tied to earlier parts (incremental Cholesky ↔ Parts 4–6 rolling hedges; low-latency book updates ↔ Part 7 risk; Kalman port deferred note consistent with §6). The honest bar applies: §9 numbers as measured, modest microbenchmark multipliers at these sizes.
-- **Report §9 now complete**: per exit gate, internally consistent, covering all shipped C++ modules including post-Part-3 portfolio/risk.
+## 2. Environment facts that keep biting
 
-### Part 11 honest result (architecture audit)
+- **No TeX engine** is installable (apt is blocked). `report/report.tex` is canonical;
+  `report/report.html` is the in-sandbox preview. Do not try `apt install texlive`.
+- **pip is PEP-668**: always `pip install --user --break-system-packages …` (what
+  `environment/setup.sh` does).
+- **`scripts/data/download.py --source github` needs network**; the raw Yahoo CSVs are
+  already committed under `data/raw/yfinance/` and `clean.py` prefers them, so the whole
+  pipeline runs offline. Skip `download.py`.
+- **Latency numbers move between sessions** because they are measured on a shared 2-core
+  sandbox. This build: vector/deque 1.084×, SoA/AoS 1.033×, regression update p50
+  599.5 ns. An earlier session recorded 1.264× / 1.152× / 518 ns. Both are real
+  measurements; the book reports the live ones and says so (Chapter 32, "Honesty remark").
+- matplotlib's **mathtext** is not LaTeX: no `\begin{cases}`/`matrix`, no `\tfrac`, `\le`,
+  `\bigl`, `\lvert`, `\bmod`, `\underbrace`, `\boxed`, `\texttt`. `latex_to_html.py`
+  translates or decomposes all of them; run `python3 report/latex_to_html.py --check-math`
+  after editing chapters (currently **3,375 expressions, 0 failures**).
 
-- **§9 complete and traceable**: all figures/tables produced by live scripts from real runs, numbers traceable to source.
-- **No overclaims**: §9 design principles accurately describe the C++ engine as it now stands; the honest finding from Parts 4–10 (no net Sharpe survives fair multiple-testing correction) remains the headline result; §9 is a completeness + traceability pass, not a rehash of statistical claims.
-- **C++ --test**: 24/0, 2852 checks pass.
-- **check.sh**: 52/52 PASS (same as prior session — no regression).
+## 3. Verified state (regenerate with `bash environment/check.sh`)
 
-## 4. YOUR TASK — Part 13: Future Extensions & Reproducibility
+| Gate | Result |
+|---|---|
+| `environment/check.sh` | 52 checks passed, 0 failed |
+| C++ `./build/statarbsim --test` | 24 tests, 2,852 assertions, 0 failures |
+| `scripts/run_statkit_tests.py` | 35 tests passed |
+| `report/build_report.py` | 24 figures, 23 tables, 352 labels, 18 citations, 0 unresolved refs, 0 unrenderable math |
+| Data panel | 764,896 rows, 195 tickers, 2010-01-04 → 2026-09-01 (16.66 yr), 11 sectors |
 
-PLAN Part 13: *Verify the complete report is reproducible, document extension opportunities, and set up the project for future sessions. This includes validating the build pipeline, confirming all results are regenerated from source, and noting open research questions.*
+### The honest empirical summary
 
-### 4.1 Suggested steps
+*Established:* the causal rolling spread reverts (ADF *p* ≈ 0, half-life ≈ 9.4 bars vs.
+≈ 171 for a static 16-year hedge); out-of-sample IC 0.12–0.21; ridge and a low-noise Kalman
+hedge beat rolling OLS net of cost (0.09–0.11 vs 0.05) mainly by cutting turnover; linear
+beats GBM/MLP out of sample; RESET does not reject linearity on the main basket
+(*p* = 0.376); HAC inflates the naive *t*-statistics 3–4× (CRM 29.5 → 7.3).
 
-1. **Finalize Discussion section (§10)**. The Discussion: What This Does and Does Not Replicate section (lines ≈1277–1300 in report.tex) currently says it will be "Filled in Part 12." Write the explicit, specific non-goals: no proprietary alternative data; no colocated/FPGA-level execution; no cross-asset-class integration; no live capital allocation feedback loops — and why each matters at real fund level. Cite the honest findings from Parts 4–10 (no net Sharpe survives correction, daily edge is small relative to cost drag).
+*Not established:* any tradeable magnitude. At 10 bps the single-basket strategy's cost
+drag is 2.39 %/yr against a 3.02 %/yr gross return (87 % consumed; break-even ≈ 11 bps);
+the four-basket book is net-negative (−0.40 to −0.46); with *M* = 44 audited strategies,
+Bonferroni survivors = 0, White RC *p* = 0.868, Hansen SPA *p* = 0.638, best HAC *t* = 1.57
+against E[max *t*] = 2.75 under independence (2.18 at the observed *M*_eff = 10.7),
+DSR = 0.305, and the required sample for 95 % power is 22.6 years uncorrected / 77.8 years
+Bonferroni-corrected. No pairwise Diebold–Mariano test shows superiority (|DM| < 1.3,
+*p* > 0.22).
 
-2. **Finalize Conclusion section (§11)**. The Conclusion (lines ≈1301–1320) currently says it will be "Filled in Part 12." Write a clear, honest statement of whether a statistically defensible edge exists after all corrections and costs, and under what conditions. Summarize: the qualitative results (mean reversion, low-turnover hedges, linear beats nonlinear) are directionally defensible, but no point estimate of net Sharpe is statistically strong after data-snooping correction.
+## 4. File map of what the last session added or changed
 
-3. **Verify build_report produces a complete consistent report**. Run `python3 report/build_report.py` and confirm:
-   - HTML preview opens and contains all section headers, figures, and tables.
-   - All §9 figures (latency_hist.png, cache_bench.png) are embedded.
-   - All Part 10 figures (multtest_sharpe.png, multtest_pvalues.png, multtest_forest.png) are embedded.
-   - No LaTeX errors in the regenerated source (the regenerate step completes without fatal errors for the scripts that have data available).
+```
+report/report.tex                          root: preamble, macros, \input of 29 chapters
+report/chapters/00_frontmatter.tex         abstract, how to read, notation
+report/chapters/01..11_*.tex               Part I: theory from first principles
+report/chapters/20_phase_map.tex           Part II opener: the phase map
+report/chapters/21..33_*.tex               Parts 0-13, one chapter each (2-3 parts per ch.)
+report/chapters/40,41,42_*.tex             Part III: synthesis, non-goals, conclusion
+report/chapters/90_appendix_derivations.tex        12 extended derivations
+report/chapters/91_appendix_statkit_validation.tex toolkit validation + all 35 tests
+report/chapters/92_appendix_reproducibility.tex    commands, expected output, artifact map
+report/chapters/93_appendix_glossary.tex           symbol index, glossary, LoF/LoT
+report/latex_to_html.py     LaTeX -> HTML book renderer (2-pass, labels/refs/TOC, mathtext)
+report/build_report.py      build driver: regenerate -> PDF (if TeX) -> HTML -> --serve
+report/references.bib       + 9 entries added for Part I (Granger-Newbold, Lo, Politis-
+                            Romano, Newey-West 1994, Harvey, Artzner, Bailey, Lopez de
+                            Prado, Dickey-Fuller 1979b)
+scripts/analysis/make_book_tables.py       6 extra LaTeX tables + power/DSR from
+                                           results/tables/multtest_pnl.csv
+scripts/analysis/compare_multtest.py       patched: also dumps multtest_pnl.csv (T x M)
+results/tables/multtest_pnl.csv, power_dsr.csv     new generated artifacts
+.gitignore                                 + /report/math/  (HTML math rasterisations)
+README.md                                  rewritten as the final deliverable README
+```
 
-4. **Verify all sections are finalized**. Check that no section in report.tex has "Filled in Part X" placeholder text left uncontrolled. The following sections must be fully filled:
-   - §8 (data-snooping correction of the headline Sharpe) — already complete from Part 10.
-   - §9 (System Architecture and Latency Analysis) — complete from Part 11.
-   - §10 (Discussion) — to be filled in Part 12.
-   - §11 (Conclusion) — to be filled in Part 12.
-   - §12 (References) — ensure `references.bib` is complete and `\printbibliography` works.
+`report/tables/*.tex`, `report/figures/*`, `report/report.html`, `report/math/` and
+`results/**` are git-ignored and regenerated; `report/chapters/*.tex`,
+`report/latex_to_html.py` and `report/build_report.py` are tracked source.
 
-5. **Check consistency across the report**. Verify that the honest findings are consistently stated: the daily edge is real in sign and structure (mean reversion of the causal rolling spread, the smooth low-noise Kalman being the best adaptive hedge, linear beating nonlinear net of cost) but small relative to cost drag and noise, so it cannot survive a search of the breadth reported here. Point estimates of net Sharpe are not statistically strong after correction.
+## 5. If you continue: prioritised next steps
 
-6. **Report build and commit**. Run the full build, generate the HTML preview, git add the tracked files (report.tex, report.html, any new results/figures that are not git-ignored), commit on `arena/01a070da-test-project`, and push. Then rewrite HANDOFF.md for the next session (if any).
+The book's Chapter 42 has the full table with effort/payoff. In order:
 
-### 4.2 Exit gate (must pass before done)
+1. **Breadth, not depth.** Pool all 195 names' baskets into one cross-sectional signal
+   (the transfer coefficient is what is missing, not the IC). This is the only change that
+   can move the *statistical* verdict, because E[max *t*] grows like √(2 log M) while the
+   signal grows like √breadth.
+2. **Higher frequency.** Daily bars give 3,979 observations; the half-life is ≈ 9 bars, so
+   intraday data would raise power by an order of magnitude — but costs then dominate, so
+   the cost model must become an impact model first.
+3. **A real cost/impact model** (Almgren–Chriss style, calibrated to ADV) instead of the
+   current fixed-bps + slippage multiplier.
+4. **Regime-conditional allocation** — the book's regime table shows the sign of the
+   strategy's return flips across volatility regimes; nothing currently exploits that.
+5. **Portfolio-level risk** beyond inverse-vol + caps: a proper covariance estimate
+   (Ledoit–Wolf), CVaR optimisation, and the VaR subadditivity failure documented in
+   Chapter 9 needs a coherent measure in the book, not just in the appendix.
+6. **Port the Kalman filter to C++** — the Python research layer proved the value
+   (q = 10⁻⁵ net Sharpe 0.113 vs 0.076 rolling OLS at w=60) but the engine still runs the
+   rolling regression.
+7. **Fix the resolution artifact** in the latency histogram (Chapter 32): 600 ns p50 with a
+   clock resolution that makes the measurement marginal; batch N updates per timing.
+8. **Pre-register** the next experiment (hypothesis, M, α, stopping rule) before running it,
+   so the multiplicity correction is a formality rather than a post-mortem.
+9. **Delisting/suspension edge cases** in the panel (currently: drop and continue, disclosed
+   in Chapter 22).
+10. **Compile the PDF.** `latexmk -pdf report/report.tex` on a machine with TeX Live; the
+    `.tex` has never been compiled by an engine, so expect a first-pass of package-level
+    fixes (the HTML renderer is deliberately more forgiving than LaTeX).
 
-- [ ] Discussion section (§10) finalized with explicit non-goals and fund-level rationale.
-- [ ] Conclusion section (§11) written with clear honest statement of whether a defensible edge exists.
-- [x] No "Filled in Part X" placeholder text left uncontrolled in report.tex.
-- [x] `python3 report/build_report.py` completes without fatal errors for available scripts; HTML preview contains all expected sections and figures.
-- [ ] `git status` clean after commit; sources + tracked report artifacts committed on `arena/01a070da-test-project`.
-- [ ] HANDOFF.md rewritten for the next session (Part 13 — Future Extensions and reproducibility verification).
+### Known cosmetic gaps in the HTML preview
 
-### 4.3 Hints
-
-- The honest bar still applies: report numbers as measured, with the caveats Parts 3–10 already give. Don't invent a big edge the data doesn't show.
-- Keep `results/` git-ignored; commit only sources + tracked report artifacts.
-- If the report is already fully consistent and all sections are filled, Part 12 is a *small* pass — say so and move on. Do not pad.
+* Floats are placed where they are written, not floated; page breaks are ignored.
+* `\listoffigures`/`\listoftables` are generated by the renderer from the build's own
+  float list, so they always match the HTML (they will differ slightly from the PDF's).
+* Theorem environments are boxes, not amsthm-styled; `proof` ends with □ but has no
+  QED-hanging-after-lists logic.
+* The sidebar shows parts + sections; the in-page Contents shows subsections too.

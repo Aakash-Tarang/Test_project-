@@ -1,0 +1,250 @@
+% =============================================================================
+%  CHAPTER 7 -- STATE-SPACE MODELS AND THE KALMAN FILTER
+% =============================================================================
+\section{State-space models and the Kalman filter}
+\label{ch:kalman}
+
+Chapters~\ref{ch:ols}--\ref{ch:regularization} estimated a \emph{fixed} $\beta$ on a
+rolling window: constant inside the window, discontinuous at the edges, and forgetful on
+a fixed schedule. This chapter derives the alternative used in Phase~\ref{ch:phase8}: let
+$\beta_t$ be a latent state that drifts, and estimate it recursively with the Kalman
+filter.
+
+\subsection{Why the hedge ratio should move}
+\label{sec:kalman:why}
+
+Three empirical reasons, all visible in our data.
+\begin{enumerate}
+  \item \textbf{Business drift.} Adobe's mix shifted over 2010--2026 from boxed Creative
+    Suite to subscription Creative Cloud to Document Cloud; its sensitivity to peers
+    changed with it. A single sixteen-year hedge ratio is an average over regimes that no
+    longer exist --- which is exactly why the static hedge residual fails the ADF test
+    ($p=0.083$, half-life $171$ bars, Table~\ref{tab:diag_stationarity}) while the
+    rolling one passes decisively ($p<10^{-3}$, half-life $9.4$ bars).
+  \item \textbf{Window edge effects.} A fixed-window OLS estimate is a step function of
+    $t$: on the day a large observation enters or leaves the window, $\hat\beta$ jumps.
+    Those jumps are pure estimation noise, and every jump that changes the position
+    costs money.
+  \item \textbf{Volatility regimes.} When the basket's volatility rises, the optimal
+    hedge weight changes even if the underlying economic relationship does not.
+\end{enumerate}
+
+\subsection{The model}
+\label{sec:kalman:model}
+
+The state-space representation used in \code{scripts/model/kalman.py} is a
+\emph{local-level / random-walk-coefficient} model. State $\beta_t\in\R^{d}$ with
+$d=k+1$ (intercept plus $k$ basket weights), observation $y_t\in\R$:
+\begin{align}
+  \beta_t &= \beta_{t-1} + \eta_t, && \eta_t\sim\mathcal N(0,Q), \label{eq:kalman:state}\\
+  y_t &= z_t^{\top}\beta_t + \eps_t, && \eps_t\sim\mathcal N(0,R), \label{eq:kalman:obs}
+\end{align}
+with $z_t=[1,\ x_t^{\top}]^{\top}\in\R^{d}$ the (known) design row at time $t$, $Q$ the
+state-noise covariance and $R$ the observation variance. Equations
+\eqref{eq:kalman:state}--\eqref{eq:kalman:obs} say: the hedge drifts as a random walk,
+and the target's log price is a noisy linear function of the current hedge.
+
+This is the most permissive time-variation assumption available: it says ``$\beta$ can
+move, and I don't know how fast''. All the structure --- how fast it actually moves ---
+is in the ratio $Q/R$, which is the single tuning knob.
+
+\begin{remark}[Notation clash]
+In this chapter $z_t$ is the design row $[1,x_t^{\top}]$ (standard Kalman notation),
+\emph{not} the standardized spread of \eqref{eq:saa:z}. Where the spread $z$-score is
+meant, it is written $z^{\text{spread}}_t$ or referred to explicitly.
+\end{remark}
+
+\subsection{Derivation I: Gaussian conditioning}
+\label{sec:kalman:bayes}
+
+Assume $\beta_{t-1\mid t-1}\sim\mathcal N(b_{t-1},P_{t-1})$ (the posterior after seeing
+data through $t-1$). Two steps.
+
+\paragraph{Predict.} From \eqref{eq:kalman:state}, $\beta_t = \beta_{t-1}+\eta_t$ is a sum
+of independent Gaussians, so
+\begin{equation}
+  \beta_{t\mid t-1} = b_{t-1},
+  \qquad
+  P_{t\mid t-1} = P_{t-1} + Q .
+  \label{eq:kalman:predict}
+\end{equation}
+The mean does not move (a random walk has no drift); the uncertainty grows by exactly the
+process noise $Q$.
+
+\paragraph{Joint distribution of state and observation.} Given \eqref{eq:kalman:obs},
+$y_t = z_t^{\top}\beta_t + \eps_t$ with $\eps_t$ independent of $\beta_t$, so
+$\begin{bmatrix}\beta_t\\ y_t\end{bmatrix}$ is jointly Gaussian with mean
+$\begin{bmatrix}\beta_{t\mid t-1}\\ z_t^{\top}\beta_{t\mid t-1}\end{bmatrix}$ and covariance
+\begin{equation}
+  \begin{bmatrix} P_{t\mid t-1} & P_{t\mid t-1}z_t \\ z_t^{\top}P_{t\mid t-1} & S_t\end{bmatrix},
+  \qquad
+  S_t \;=\; z_t^{\top}P_{t\mid t-1}z_t + R
+  \label{eq:kalman:joint}
+\end{equation}
+(the cross-covariance is $\Cov(\beta_t, z_t^{\top}\beta_t+\eps_t)=P_{t\mid t-1}z_t$, and
+$\Var(y_t)=z_t^{\top}Pz_t+R$).
+
+\paragraph{Update by the Gaussian conditioning formula.} For jointly Gaussian
+$(u,v)$ with means $(\mu_u,\mu_v)$ and blocks $(\Sigma_{uu},\Sigma_{uv},\Sigma_{vv})$,
+\begin{equation}
+  u\mid v \;\sim\; \mathcal N\bigl(\mu_u+\Sigma_{uv}\Sigma_{vv}^{-1}(v-\mu_v),\
+  \Sigma_{uu}-\Sigma_{uv}\Sigma_{vv}^{-1}\Sigma_{vu}\bigr).
+  \label{eq:gausscond}
+\end{equation}
+Apply with $u=\beta_t$, $v=y_t$: defining the \emph{innovation}
+$v_t = y_t - z_t^{\top}\beta_{t\mid t-1}$ (the part of the observation the model did not
+expect) and the \emph{gain} $K_t = P_{t\mid t-1}z_t/S_t$,
+\begin{align}
+  b_t &= \beta_{t\mid t} = \beta_{t\mid t-1} + K_t\,v_t , \label{eq:kalman:meanupdate}\\
+  P_t &= \bigl(I - K_t z_t^{\top}\bigr)P_{t\mid t-1}. \label{eq:kalman:covupdate}
+\end{align}
+That is the entire Kalman filter: \eqref{eq:kalman:predict}, the innovation and its
+variance $S_t$, the gain, and \eqref{eq:kalman:meanupdate}--\eqref{eq:kalman:covupdate}.
+
+\begin{intuition}
+\eqref{eq:kalman:meanupdate} says: move the estimate in the direction that would have
+explained the surprise, by an amount proportional to the surprise. The gain $K_t$ is the
+proportionality, and it is exactly a signal-to-noise ratio: numerator
+$P_{t\mid t-1}z_t$ is ``how much would the state have to move to produce this
+observation'', denominator $S_t$ is ``how big is the total uncertainty in this
+observation''. When $R$ dominates (noisy data), $K_t\to0$ and the filter ignores the new
+observation; when $Q$ dominates (the state is genuinely moving fast), $K_t\to$ large and
+the filter chases it.
+\end{intuition}
+
+\subsection{Derivation II: recursive weighted least squares}
+\label{sec:kalman:rls}
+
+There is a second, more classical route: the Kalman filter for \eqref{eq:kalman:state}--
+\eqref{eq:kalman:obs} with $R=1$ is \emph{exponentially discounted recursive least
+squares}. Setting $Q=\rho I$ and letting $\rho\to0$ recovers ordinary RLS, whose update
+is
+\begin{equation}
+  b_t = b_{t-1} + \frac{P_{t-1}z_t}{z_t^{\top}P_{t-1}z_t}\bigl(y_t-z_t^{\top}b_{t-1}\bigr),
+  \qquad
+  P_t = P_{t-1} - \frac{P_{t-1}z_tz_t^{\top}P_{t-1}}{z_t^{\top}P_{t-1}z_t},
+  \label{eq:rls}
+\end{equation}
+which is \eqref{eq:kalman:meanupdate}--\eqref{eq:kalman:covupdate} with $R=0$. The
+covariance update in \eqref{eq:rls} is precisely the Sherman--Morrison identity
+\eqref{eq:shermanmorrison} applied to $(A+z z^{\top})^{-1}$: adding one observation is a
+rank-1 update of the information matrix, so its inverse is $O(d^2)$ to maintain. That is
+why the filter is cheap and why the same algebra underlies the engine's incremental
+regression (Section~\ref{sec:ols:incremental}).
+
+\subsection{Steady state: the filter becomes an EWMA}
+\label{sec:kalman:steady}
+
+For a scalar state with constant design ($z_t\equiv1$), $P_{t\mid t-1}=P_{t-1}+Q$ and
+$P_t=(1-K_t)P_{t\mid t-1}$ with $K_t=P_{t\mid t-1}/(P_{t\mid t-1}+R)$. At steady state
+$P_t=P_{t-1}=P$, so
+\[
+  P = (1-K)(P+Q),\qquad K=\frac{P+Q}{P+Q+R}
+  \ \Longrightarrow\
+  P^2 - RP - RQ\cdot 0 \ \Rightarrow\ P = \frac{-R+\sqrt{R^2+4RQ}}{2},
+\]
+and the steady-state gain is a constant $K^\ast$ depending only on the ratio $Q/R$. The
+mean update becomes
+\begin{equation}
+  b_t = b_{t-1} + K^\ast\bigl(y_t - b_{t-1}\bigr) = (1-K^\ast)b_{t-1} + K^\ast y_t ,
+  \label{eq:kalman:ewma}
+\end{equation}
+an exponentially weighted moving average with decay $1-K^\ast$ and effective memory
+$1/K^\ast$ bars. \emph{The Kalman filter is a principled EWMA whose smoothing constant is
+computed from the noise ratio rather than chosen by hand}, and, unlike a fixed-window
+OLS, it forgets smoothly instead of discontinuously.
+
+This explains the central empirical finding of Phase~\ref{ch:phase8}. The best net Sharpe
+($\approx0.113$ full-sample, $\approx0.111$ on 2022+) occurs at \emph{low} state noise
+$q=10^{-5}$, where $K^\ast$ is tiny and the hedge is nearly constant --- only $61$ round
+trips over sixteen years versus $198$ for the 120-bar window. At high $q$ ($10^{-2}$,
+$10^{-1}$) the filter tracks the data closely, which \emph{maximises the Gaussian fit
+likelihood} and makes the residual whiter --- and destroys the tradeable spread, driving
+net Sharpe to $-0.042$ and $-0.114$. Chasing the data removes the persistent deviation
+that the strategy monetises.
+
+\begin{remark}[Honesty: likelihood and profitability point in opposite directions]
+This is the single most instructive result in the project. The maximum-likelihood $q$ is
+\emph{not} the profit-maximising $q$, because the object we trade is the
+\emph{predictable part} of the residual, and a filter that explains everything leaves
+nothing predictable. Any adaptive-estimation project must decide, explicitly, whether it
+is optimising fit or optimising the tradable signal. Here the answer was forced: the
+validation window (2019--2021) selects $q=10^{-3}$ by net Sharpe, which then performs
+poorly out of sample ($-0.257$ net on 2022+), while the smoother $q=10^{-5}$ --- chosen
+by the reasoning above rather than by the validation rule --- does better ($+0.111$).
+Reporting that the selection rule failed is more useful than reporting the best number.
+\end{remark}
+
+\subsection{Numerical stability: the Joseph form}
+\label{sec:kalman:joseph}
+
+The covariance update \eqref{eq:kalman:covupdate} is algebraically equivalent to the
+symmetric form
+\begin{equation}
+  P_t \;=\; \bigl(I-K_tz_t^{\top}\bigr)P_{t\mid t-1}\bigl(I-K_tz_t^{\top}\bigr)^{\top}
+  \;+\; K_t R K_t^{\top},
+  \label{eq:joseph}
+\end{equation}
+(the \emph{Joseph form}). Derivation: expand \eqref{eq:joseph} and use
+$K_t = P_{t\mid t-1}z_t/S_t$ with $S_t=z_t^{\top}P_{t\mid t-1}z_t+R$; the cross terms
+cancel to leave $(I-Kz^{\top})P$. The two forms are identical in exact arithmetic but
+differ in floating point: \eqref{eq:kalman:covupdate} is a difference of nearly equal
+quantities and can lose symmetry or, worse, positive-definiteness after many
+iterations --- which then produces a negative variance and a filter that diverges. The
+Joseph form is a sum of two PSD terms and cannot. \code{scripts/model/kalman.py}
+implements \code{\_stable\_cov\_update} in exactly this form, with an $R$ floor of
+$10^{-18}$ to avoid division by zero, and the unit tests in
+\code{scripts/test\_kalman.py} assert symmetry and no-lookahead on synthetic data.
+
+\subsection{What the filter is used for, and how it is validated}
+\label{sec:kalman:usage}
+
+\paragraph{Signal construction.} The no-lookahead discipline is identical to the rolling
+window: the quantity that scores bar $t$ is the \emph{predictive} state
+$\beta_{t\mid t-1}$, which by \eqref{eq:kalman:predict} uses only information through
+$t-1$. The innovation $v_t=y_t-z_t^{\top}\beta_{t\mid t-1}$ is the one-step-ahead
+forecast error --- the natural analogue of the spread --- and the traded signal is the
+\emph{standardised innovation}
+\begin{equation}
+  z^{\text{spread}}_t \;=\; \frac{v_t}{\sqrt{S_t}} ,
+  \label{eq:kalman:signal}
+\end{equation}
+which is exactly $N(0,1)$ under the model, so a threshold of $2.0$ has a known
+interpretation (a 2.5\%-per-tail event) rather than an empirical one. Only after bar
+$t$'s signal has been recorded is bar $t$ fed into \eqref{eq:kalman:meanupdate} to
+prepare for $t+1$.
+
+\paragraph{Initialisation.} A 120-bar warm-up OLS gives $b_0$, and $R$ is the warm-up
+residual variance $\hat\sigma^2=\mathrm{RSS}/(W-d)$; the initial covariance is the OLS
+posterior covariance $P_0 = R\,(A_0^{\top}A_0)^{-1}$, i.e.\ the filter starts with
+exactly the uncertainty of the warm-up estimate. $Q$ is set as $Q_{ii}=q^2R$, a single
+dimensionless dial $q$ --- one hyper-parameter, one hypothesis to count in
+Chapter~\ref{ch:multipletesting}.
+
+\paragraph{Synthetic validation before any real-data claim.} \code{scripts/test\_kalman.py}
+generates a target whose true betas drift smoothly, runs the filter, and asserts:
+\begin{itemize}
+  \item the filtered betas track the truth with RMSE $0.73$, versus $3.37$ for a fixed
+    full-sample OLS beta --- a $4.6\times$ improvement in tracking error, measured where
+    the truth is known;
+  \item the predictive state at bar $t$ is bit-identical when future bars are changed
+    (the no-lookahead property, tested by perturbation);
+  \item the filtered residual rejects a unit root (ADF $p<10^{-3}$) with an OU half-life
+    of $\approx8$ bars, so the filtered spread is the same kind of tradeable stationary
+    object as the rolling one.
+\end{itemize}
+
+\subsection{Cost and the C++ port}
+\label{sec:kalman:cost}
+
+Per bar the filter costs: one matrix-vector product $Pz$ ($O(d^2)$), the scalar $S_t$
+($O(d)$), the gain ($O(d^2)$), the mean update ($O(d)$), and the covariance update
+($O(d^3)$ for the two $d\times d$ multiplications). With $d\le5$ that is $\le 250$ flops
+per bar --- well under a microsecond, comparable to the measured regression stage
+($\approx0.6\,\mu$s, Table~\ref{tab:engine_bench}). The recursion is therefore not a
+performance problem, and the Kalman hedge is kept as a dependency-free Python reference
+implementation in the research layer; porting it into \code{src/model/} is straightforward
+and deferred (documented in Phase~\ref{ch:phase8}). This is a deliberate allocation of
+effort: the C++ engine exists to make the \emph{simulation} fast and provably
+allocation-free, and a per-bar 250-flop recursion in Python does not change any
+conclusion in this book.

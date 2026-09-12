@@ -1,0 +1,230 @@
+% =============================================================================
+%  CHAPTER 8 -- NONLINEAR MODELS, OVERFITTING, AND THE RESET TEST
+% =============================================================================
+\section{Nonlinear models, overfitting, and the RESET test}
+\label{ch:nonlinear}
+
+Phase~\ref{ch:phase9} asks a specific question: does a flexible nonlinear forecaster beat
+the regularized linear map on the same causal features, out of sample, net of cost? This
+chapter builds the theory needed to answer it and to predict the answer in advance.
+
+\subsection{The estimation target, and how to score a forecast}
+\label{sec:nonlinear:target}
+
+Everything is a forecast of a conditional mean. Write the \emph{regression function}
+\begin{equation}
+  m(f) \;=\; \E\bigl[R \mid F=f\bigr],
+  \label{eq:regressionfunction}
+\end{equation}
+where $F_t$ is a causal feature vector (in our case 11 features built from bars
+$\le t$: the current $z$, the spread level and its changes, 5- and 20-bar rolling
+volatility of the spread, target and basket returns and their lags) and $R_t$ the target
+(the realized $h$-bar market-neutral return of fading the spread,
+equation~\eqref{eq:nonlin_target}). Any estimator $\hat m$ is judged by its
+out-of-sample mean squared error, which decomposes exactly:
+\begin{equation}
+  \E\bigl[(R-\hat m(F))^2\bigr]
+  \;=\; \underbrace{\E\bigl[(m(F)-\hat m(F))^2\bigr]}_{\text{estimation error}}
+  \;+\; \underbrace{\E\bigl[(R-m(F))^2\bigr]}_{\text{irreducible noise } \sigma^2} .
+  \label{eq:mse:decomp}
+\end{equation}
+(The cross term vanishes because $\E[R-m(F)\mid F]=0$ by definition of the conditional
+mean.) Further decomposing the estimation error at a fixed $f$ over repeated samples,
+\[
+  \E_{\mathcal D}\bigl[(m(f)-\hat m(f))^2\bigr]
+  = \bigl(m(f)-\E_{\mathcal D}\hat m(f)\bigr)^2 + \Var_{\mathcal D}\bigl(\hat m(f)\bigr)
+  = \mathrm{bias}^2 + \mathrm{variance},
+\]
+which is \eqref{eq:biasvariance} applied to a function. The only lever is the
+bias/variance split; $\sigma^2$ is a property of the market.
+
+\paragraph{Two scores, and why we report both.}
+\begin{itemize}
+  \item \textbf{Out-of-sample $R^2$}: $1-\mathrm{MSE}_{\text{oos}}/\Var(R_{\text{oos}})$.
+    It is scale-free but brutally sensitive to the noise term: with a daily reversion
+    signal whose explained variance is a few percent, an $R^2$ of $0.05$ is a strong
+    result and a negative $R^2$ merely means ``worse than predicting the mean''.
+  \item \textbf{Information coefficient (IC)}: $\Corr(\hat m(F_t), R_t)$ out of sample.
+    It ignores the forecast's scale and measures only directional/rank content, which is
+    what a threshold policy consumes. Since $R^2 = \mathrm{IC}^2$ for a correctly scaled
+    linear forecast, an IC of $0.34$ corresponds to $R^2\approx0.12$ --- and our measured
+    linear IC of $0.341$ with $R^2=0.088$ (Table~\ref{tab:nonlinear_forecast}) shows the
+    forecast is slightly \emph{mis-scaled} but well-directed. We also report a
+    rank/persistence reference (IC of $z_t$ itself) so that ``beyond just trading the
+    current mispricing'' is measurable.
+\end{itemize}
+
+\subsection{Tree ensembles: how they fit, and why they overfit}
+\label{sec:nonlinear:trees}
+
+\paragraph{One tree.} A regression tree partitions the feature space into axis-aligned
+boxes by recursively choosing a split (feature $j$, threshold $s$) that minimises the
+within-child sum of squares,
+\begin{equation}
+  \min_{j,s}\ \Bigl[\ \min_{c_L}\sum_{i\in L}(y_i-c_L)^2 + \min_{c_R}\sum_{i\in R}(y_i-c_R)^2\ \Bigr],
+  \label{eq:tree:split}
+\end{equation}
+whose inner solutions are the child means, so the criterion reduces to maximising
+$\frac{(\sum_{i\in L}y_i)^2}{\lvert L\rvert}+\frac{(\sum_{i\in R}y_i)^2}{\lvert R\rvert}$.
+The prediction is piecewise \emph{constant}. Consequences: trees are invariant to
+monotone transformations of features, handle interactions automatically, and
+\emph{extrapolate terribly} --- outside the training range they return a boundary
+constant, which for a spread signal means a large confident error precisely when the
+spread does something unprecedented.
+
+\paragraph{Boosting as functional gradient descent.} Gradient boosting fits an additive
+model $F_M(x)=\sum_{m=1}^M \nu\,h_m(x)$ by, at each step, computing the negative gradient
+of the loss at the current fit,
+$\tilde y_i = -\bigl[\partial L(y_i, \hat y_i)/\partial \hat y_i\bigr]_{\hat y_i=F_{m-1}(x_i)}$
+(which for squared loss is the residual $y_i-F_{m-1}(x_i)$), fitting a base tree to those
+pseudo-targets, and adding it with learning rate $\nu$. With $\nu$ small the ensemble is
+an explicit descent path in function space; with $\nu=1$ it interpolates the training
+data quickly and variance explodes. \code{HistGradientBoostingRegressor} additionally
+bins features into 255 buckets (histogram-based splits), which is both a speed trick and
+an implicit regulariser.
+
+\paragraph{Why it must lose here.} Boosting's bias is essentially zero given enough
+rounds; all its error is variance, and variance scales roughly as
+$O(\text{complexity}/T)$. With $T\approx2{,}900$ usable training bars, 11 features, and a
+signal-to-noise ratio of a few percent, the variance term dominates. The measured
+learning curve (Table~\ref{tab:nonlinear_learning},
+Figure~\ref{fig:nonlinear_learning}) is the direct evidence: out-of-sample $R^2$ is
+$-0.45$ at 400 training bars, $-0.13$ at 2{,}000, $-0.03$ at 2{,}400, and only at
+$2{,}800$ bars does it turn positive ($+0.43$ on that particular validation window). The
+model is still climbing out of its own variance hole at the very end of the available
+data. There is no version of this dataset where it wins.
+
+\subsection{The shallow network}
+\label{sec:nonlinear:mlp}
+
+A single hidden layer with $H$ units computes
+\begin{equation}
+  \hat m(f) \;=\; b_0 + \sum_{h=1}^{H} c_h\,\phi\bigl(w_h^{\top}f + a_h\bigr),
+  \label{eq:mlp}
+\end{equation}
+with $\phi$ a nonlinearity (ReLU, tanh). The universal approximation theorem says such a
+network can approximate any continuous function on a compact set arbitrarily well as
+$H\to\infty$ --- a statement about \emph{bias} that says nothing about variance and is
+therefore almost useless for a $T=3{,}000$ problem. Training is non-convex
+(gradient descent from random initialisation, so results vary with the seed), the
+effective capacity is controlled by early stopping and weight decay rather than by $H$,
+and the whole apparatus is sensitive to feature scaling --- which is why the pipeline
+standardises features using training-window statistics only (a leak that is easy to make
+and is explicitly avoided here). Measured: the MLP's IC ($0.267$ on ADBE) sits between
+the linear ($0.341$) and the GBM ($0.255$), and its $R^2$ is negative ($-0.049$).
+
+\subsection{Ramsey's RESET test: is the linear form wrong?}
+\label{sec:nonlinear:reset}
+
+RESET (Regression Equation Specification Error Test, \cite{ramsey1969}) is a
+general specification test that requires no alternative model. Given the fitted linear
+model $y=X\beta+\eps$ with fitted values $\hat y=X\hat\beta$:
+
+\begin{enumerate}
+  \item Form the \emph{augmented} regression
+    $y = X\beta + \gamma_2\hat y^2 + \gamma_3\hat y^3 + \dots + \gamma_k \hat y^k + u$.
+  \item Test $H_0:\gamma_2=\dots=\gamma_k=0$ with the standard $F$-statistic
+    \eqref{eq:ftest}, with $k-1$ numerator and $T-n-k+1$ denominator degrees of freedom.
+\end{enumerate}
+
+\paragraph{Why powers of $\hat y$?} If the true relation is nonlinear in $X\beta$, then
+$y\approx g(X\beta)$ and a Taylor expansion of $g$ around $\E[\hat y]$ is a polynomial in
+$\hat y$; adding those powers should improve the fit. The test is therefore a
+low-order polynomial check on the functional form, and it is powerful against the most
+common alternatives (quadratic curvature, saturation). Its weakness: it is not powerful
+against omitted \emph{variables} that are orthogonal to $\hat y$, and using $\hat y$
+rather than $X\beta$ makes the augmented regressors correlated with the original ones,
+which mildly distorts small-sample size.
+
+\paragraph{A caution about running it out of sample.} RESET is a test about the
+\emph{fitting} equation, so it is run on the training sample only
+(Phase~\ref{ch:phase9}, $n_{\text{train}}=2{,}881$); running it on held-out data would
+mix two different questions (misspecification versus generalisation).
+
+\paragraph{Measured result.} Table~\ref{tab:nonlinear_reset}: ADBE $p=0.376$ (does
+\emph{not} reject linearity), AVGO $p<10^{-3}$, GS $p=0.0023$, CAT $p<10^{-3}$ (all
+reject). The reading is subtle and worth stating carefully: on three of four baskets the
+linear forecasting equation \emph{is} statistically misspecified, yet the flexible models
+fail to convert that misspecification into out-of-sample $R^2$ (AVGO GBM: $+0.119$ versus
+linear $+0.173$; GS GBM: $-0.052$ versus linear $+0.078$; CAT GBM: $-0.058$ versus linear
+$+0.041$). Detecting nonlinearity and \emph{exploiting} it are different problems, and
+the second requires far more data than the first. With $T\approx3{,}000$ and a
+few-percent signal, exploitation fails.
+
+\subsection{From IC to Sharpe: the fundamental law, and why it over-promises}
+\label{sec:nonlinear:fundamentallaw}
+
+Grinold's fundamental law of active management states
+\begin{equation}
+  \mathrm{IR} \;=\; \mathrm{IC}\times\sqrt{\text{breadth}},
+  \label{eq:fundamentallaw}
+\end{equation}
+where IR is the (annualised) information ratio --- for a market-neutral book, essentially
+the Sharpe --- and breadth is the number of \emph{independent} forecasts per year. It
+follows from \eqref{eq:sharpetstat}: summing $B$ independent bets each with mean
+$\mu_b=\mathrm{IC}\cdot\sigma_b$ and standard deviation $\sigma_b$ gives a portfolio mean
+$B\mu_b$ and volatility $\sqrt B\sigma_b$, hence ratio $\mathrm{IC}\sqrt B$.
+
+Applying it naively to our numbers produces an absurdity, and diagnosing the absurdity is
+instructive. With $\mathrm{IC}=0.34$ (ADBE linear) and $B=252$ daily forecasts,
+\eqref{eq:fundamentallaw} gives $\mathrm{IR}=0.34\times\sqrt{252}=5.4$. The measured net
+Sharpe is $0.05$. Five things break the law's assumptions, in decreasing order of
+importance here:
+\begin{enumerate}
+  \item \textbf{The forecasts are not independent.} The target is the realized
+    \emph{$h=5$-bar} (and, for the IC column of Table~\ref{tab:model_compare}, 21-bar)
+    forward return, so consecutive forecasts overlap and share the same future. The
+    effective number of independent bets per year is $\approx252/h$, i.e.\ $50$ for
+    $h=5$ and $12$ for $h=21$, giving $\mathrm{IR}\approx0.34\sqrt{50}=2.4$ or
+    $0.34\sqrt{12}=1.2$. Still too high.
+  \item \textbf{Breadth is not forecasts, it is \emph{positions taken}.} The threshold
+    policy trades only when $\lvert z_t\rvert\ge2$ --- about $198$ round trips in
+    4{,}190 bars, i.e.\ $\approx12$ trades per year, with the book flat (or unchanged)
+    most of the time. Using $B=12$: $\mathrm{IR}\approx0.34\sqrt{12}=1.2$.
+  \item \textbf{IC is measured gross of cost and against a partially hedge-dependent
+    target.} The realized return $R_t^h$ is itself computed from a \emph{rolling} hedge,
+    so a forecast that predicts the hedge's own estimation error gets credit that a real
+    book cannot collect. At 10\,bps one-way and $\approx12$ round trips/year, cost drag is
+    $\approx12\times2\times0.001=2.4\%$/year on \$1 gross, versus a gross annual return of
+    $3.0\%$ (Table~\ref{tab:backtest_base}) --- i.e.\ \textbf{costs consume 80\% of the
+    gross edge}. This is the dominant term, and it is why net Sharpe is $0.05$ rather than
+    $0.385$.
+  \item \textbf{The transfer coefficient is below 1.} Constraints (threshold bands,
+    one-bar execution delay, dollar neutrality, integer rebalancing) mean the position
+    actually held is not $\propto$ the forecast. In Grinold's full form
+    $\mathrm{IR}=\mathrm{IC}\times\sqrt{B}\times\mathrm{TC}$ with $\mathrm{TC}\le1$;
+    here $\mathrm{TC}$ is small because the policy is a sign function of $z$, not a
+    proportional bet.
+  \item \textbf{IC is estimated with error.} With $\approx1{,}164$ overlapping
+    observations, the standard error of an IC estimate is roughly
+    $1/\sqrt{T_{\text{eff}}}\approx1/\sqrt{55}\approx0.13$ for $h=21$ --- comparable to
+    the IC itself. The honest statement is ``IC is positive'', not ``IC is $0.34$''.
+\end{enumerate}
+
+\begin{remark}[Honesty: the arithmetic of a weak edge]
+Putting (2) and (3) together gives the real picture, and it is worth internalising
+because it explains every negative result in Part~II: a single-basket daily spread
+strategy takes $\sim$12 independent bets a year with an IC of $0.2$--$0.3$, so its
+\emph{gross} Sharpe ceiling is $\approx0.3\sqrt{12}\approx1.0$, and paying 10\,bps
+round-trip on every bet removes most of it. The measured gross Sharpe of $0.385$ and net
+of $0.05$ are entirely consistent with that arithmetic. To do better you need more
+breadth (many more baskets --- which multiplies the hypothesis count $M$ and therefore
+the correction in Chapter~\ref{ch:multipletesting}), lower cost (fewer, larger trades),
+or a genuinely higher IC. Nothing in the data suggests the third is available at daily
+frequency with public equity data.
+\end{remark}
+
+\subsection{What would make a nonlinear model worth it}
+\label{sec:nonlinear:when}
+
+The verdict ``linear wins'' is a statement about \emph{this} sample size, feature set, and
+horizon --- not a universal claim. Nonlinear models earn their variance when: (i) the
+signal-to-noise ratio is higher (intraday microstructure, order-flow features); (ii) the
+sample is much larger (a cross-section of hundreds of baskets pooled, so $T\times N$
+observations rather than $T$); (iii) the relationship has genuine structure the linear
+form cannot express (option-like payoffs, hard regimes, interactions with liquidity);
+(iv) the target is a classification with strong asymmetry (``will this spread break?''
+rather than ``how much will it revert?''). Item (ii) is the cheapest to test and is the
+first item of future work in Chapter~\ref{ch:conclusion}: pool all 195 names' baskets into one
+supervised-learning problem with basket fixed effects, which raises the effective sample
+by two orders of magnitude while keeping the per-basket economics.

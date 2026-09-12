@@ -1,0 +1,180 @@
+% =============================================================================
+%  CHAPTER 12 -- THE PHASE MAP: HOW THIS PROJECT WAS EXECUTED
+% =============================================================================
+\section{The phase map: how this project was executed}
+\label{ch:phasemap}
+
+Part~II is a record of what was actually done. Before the individual phases, this chapter
+explains the execution model, because the model is part of the result: a project built in
+thirteen sequential phases with a hard exit gate at each one produces different (better,
+more honest) output than a project written in one pass.
+
+\subsection{The rules the project ran under}
+\label{sec:phasemap:rules}
+
+From \code{PLAN.md}, in force for every phase:
+
+\begin{enumerate}[label=\textbf{R\arabic*.}]
+  \item \textbf{Golden rule.} No number appears in the report unless it was produced by
+    checked-in code in this repository. Nothing is reported without a significance test,
+    out-of-sample validation, and cost adjustment. A negative result, clearly explained,
+    counts as success.
+  \item \textbf{One phase per session.} Each session completes exactly one Part, commits
+    it, and writes \code{HANDOFF.md} briefing the next session completely --- enough that
+    a fresh agent with no memory can continue. This is why \code{HANDOFF.md} contains
+    recovery commands rather than prose.
+  \item \textbf{Exit gates.} Each Part lists preliminary checks that must pass before the
+    Part is declared done (compiles, unit tests pass, every figure the report references
+    exists and is produced by code, no raw data committed, \code{check.sh} green).
+  \item \textbf{C++ is the simulation core; Python is research and plotting.} No strategy
+    simulation logic lives only in Python.
+  \item \textbf{Walk-forward, lookahead-free, gross and net everywhere.}
+  \item \textbf{Significance or it didn't happen.} No claim without its test; no best-case
+    number without its multiple-testing-corrected companion.
+  \item \textbf{The report is built, not typed.} \code{report/build\_report.py}
+    regenerates every figure and table from \code{results/} before rendering.
+\end{enumerate}
+
+\subsection{The environment, and how it shaped the design}
+\label{sec:phasemap:env}
+
+Every design decision in this repository is downstream of a constraint discovered in
+Phase~\ref{ch:phase0} and recorded in \code{environment/env\_map.md}:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{0.30\linewidth}p{0.16\linewidth}p{0.46\linewidth}}
+\toprule
+Resource & Status & Consequence for the design \\
+\midrule
+\code{g++} 12.2, \code{make} & available & the C++ engine builds with the system toolchain \\
+\code{cmake} & installable from PyPI & \code{cmake -S src -B build}; \code{PATH} must include \code{\$HOME/.local/bin} \\
+Python 3.11 + PyPI & reachable & numpy/pandas/scipy/statsmodels/matplotlib/sklearn all usable \\
+\code{pip} & PEP-668 externally managed & every install needs \code{--user --break-system-packages} \\
+github.com / codeload & reachable & the only in-sandbox route to real market data (repo tarballs) \\
+Yahoo / stooq / Nasdaq APIs & \textbf{blocked} & the primary 16.7-year total-return panel had to be downloaded externally and committed as raw CSVs \\
+apt / conda / Rust & blocked & no \code{texlive}, no Eigen, no system packages at all \\
+\textbf{LaTeX engine} & \textbf{not installable} & \code{report.tex} is canonical LaTeX but cannot be compiled here; \code{build\_report.py} always renders a self-contained HTML preview with locally rasterised math \\
+CPU / RAM & 2 cores, 3.8\,GB & datasets kept small (195 names, 4{,}190 bars); parallelism limited to \code{-j2} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two consequences deserve emphasis because they are unusual.
+
+\paragraph{No Eigen, no LAPACK.} Linear algebra is hand-rolled in
+\code{src/model/dense\_la.h}: an SPD/ridge Cholesky solver and a cyclic-Jacobi symmetric
+eigen-solver (Section~\ref{sec:pca:jacobi}). This was a forced choice that turned out to
+be a good one --- the code is a few hundred lines, cache-friendly for $n\le5$, and
+unit-tested against reconstruction identities rather than against another library's
+output.
+
+\paragraph{No TeX engine.} The report cannot be compiled to PDF inside the sandbox. The
+solution is a two-track build: \code{report/report.tex} (with \code{report/chapters/*.tex})
+is written to compile cleanly anywhere a normal TeX distribution exists, and
+\code{report/build\_report.py} additionally renders \code{report/report.html} --- a
+self-contained book preview in which every display equation is rasterised locally by
+matplotlib's \code{mathtext} and every inline formula is transliterated to HTML, so no
+CDN, no network, and no MathJax is needed. That is why ``running
+\code{python3 report/build\_report.py}'' is the single command that produces the readable
+artifact.
+
+\subsection{The thirteen phases at a glance}
+\label{sec:phasemap:table}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{p{0.05\linewidth}p{0.26\linewidth}p{0.36\linewidth}p{0.22\linewidth}}
+\toprule
+Phase & Goal & Main deliverable & Chapter \\
+\midrule
+0 & Plan, environment recon, scaffolding & \code{PLAN.md}, \code{environment/}, directory skeleton, report skeleton & \ref{ch:phase0} \\
+1 & Real data, documented universe & 195-name 2010--2026 total-return panel, cleaner, QA gate, data summary & \ref{ch:phase1} \\
+2 & Statistical foundation toolkit & \code{scripts/statkit/}: ADF, KPSS, EG, Johansen, DW, LB, BP, White, HAC, OU, DM, bootstrap, Bonferroni, RC, SPA + 35 unit tests & \ref{ch:phase2} \\
+3 & Dependency-free C++ engine skeleton & SoA buffer, incremental rolling regression, basket selector, signal, book, latency histograms, hand-rolled LA, 13 tests & \ref{ch:phase3} \\
+4 & Correctness core & walk-forward loop, next-bar execution, cost model, no-lookahead test, brute-force cross-check, first real backtest & \ref{ch:phase4} \\
+5 & Baseline model comparison & OLS / Ridge / Lasso / ElasticNet / PCR through one identical causal pipeline & \ref{ch:phase5} \\
+6 & Statistical diagnostics & the full battery on the traded residuals: stationarity, cointegration, autocorrelation, heteroskedasticity, HAC before/after, half-life vs.\ holding period & \ref{ch:phase6} \\
+7 & Portfolio book and risk controls & four concurrent strategies, inverse-vol with caps, VaR/CVaR, regime and stress decomposition, sensitivity heatmaps & \ref{ch:phase7} \\
+8 & Kalman time-varying hedge & state-space model, Joseph-stabilised filter, synthetic validation, comparison vs.\ rolling OLS/Ridge & \ref{ch:phase8} \\
+9 & Nonlinear extension + RESET & causal GBM/MLP forecasting, learning curves, RESET, gated-trading verdict & \ref{ch:phase9} \\
+10 & Multiple testing + DM & hypothesis-count audit ($M{=}44$), Bonferroni, White RC, Hansen SPA, DM forest, power analysis & \ref{ch:phase10} \\
+11 & Architecture and latency & design rationale, cache microbenchmarks, per-stage latency percentiles, traceability of every systems number & \ref{ch:phase11} \\
+12 & Report assembly and non-goals & complete report, abstract, discussion, explicit non-goals, conclusion & \ref{ch:phase12} \\
+13 & Reproducibility and delivery & end-to-end regeneration, this book, reproducibility manual, future work & \ref{ch:phase12} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Repository layout}
+\label{sec:phasemap:layout}
+
+\begin{verbatim}
+environment/     bootstrap (setup.sh), exit gate (check.sh), env map, data candidates
+scripts/
+  data/          download.py, clean.py, qa.py, export_engine_input.py, sector map, tickers
+  statkit/       the statistical library: stationarity, cointegration, autocorr,
+                 heterosk, hac, ou, forecast (DM), bootstrap, multtest, misspec + tests/
+  model/         baseline_models.py (walk-forward hedges + simulate), kalman.py,
+                 nonlinear_models.py
+  analysis/      capture_* (run the experiment, write results/tables/*.csv)
+  plotting/      render_*  (read results/, write results/figures/*.png + report/tables/*.tex)
+  test_kalman.py, test_nonlinear.py, run_statkit_tests.py
+src/             the C++ engine (header-only)
+  data/          csv_loader.h, market_data_buffer.h   (SoA ring buffer)
+  model/         dense_la.h (Cholesky + Jacobi), rolling_regression.h, basket_selector.h
+  signal/        signal_generator.h                   (z-threshold policy)
+  portfolio/     portfolio_book.h, risk.h             (positions; inverse-vol + limits)
+  engine/        backtest_engine.h, spread_backtest.h, latency_hist.h
+  main.cpp       --version / --test / --demo
+test/            minimal_test.hpp (hand-rolled harness) + engine_tests.cpp
+bench/           microbench.cpp  (vector vs deque, SoA vs AoS)
+report/          report.tex (root), chapters/*.tex (this book), references.bib,
+                 build_report.py (the single entry point), tables/ + figures/ (generated)
+data/            raw/yfinance/*.csv (committed), processed/ (git-ignored, regenerated)
+results/         tables/*.csv, figures/*.png, metrics/ (all git-ignored, all regenerated)
+PLAN.md          the 13-phase master plan and the rules above
+HANDOFF.md       briefing for the next session, rewritten every phase
+\end{verbatim}
+
+Two conventions worth stating explicitly because they make the repository auditable:
+\begin{itemize}
+  \item \textbf{\code{capture\_*} versus \code{render\_*}.} Scripts named
+    \code{capture\_\{backtest,portfolio,engine\_bench\}.py} or \code{compare\_*.py}
+    \emph{run the experiment} and write machine-readable results to
+    \code{results/tables/*.csv}. Scripts named \code{render\_*.py} \emph{only read}
+    those CSVs and produce figures plus the \code{report/tables/*.tex} fragments. The
+    separation means a rendering bug can never change a number, and a number can always
+    be traced to one CSV and one capturing script.
+  \item \textbf{Generated artifacts are git-ignored.} \code{results/},
+    \code{data/processed/}, \code{build/}, \code{report/tables/},
+    \code{report/figures/}, \code{report/report.html} are all reproducible and all
+    excluded, so the repository holds sources only. The exception is
+    \code{data/raw/yfinance/*.csv}, which is committed precisely because it
+    \emph{cannot} be regenerated in this sandbox (Yahoo is blocked at runtime); it is the
+    one piece of raw data that had to be frozen.
+\end{itemize}
+
+\subsection{How to reproduce everything, in one command sequence}
+\label{sec:phasemap:reproduce}
+
+\begin{verbatim}
+export PATH="$HOME/.local/bin:$PATH"
+bash environment/setup.sh                       # toolchain (~2 min, idempotent)
+python3 scripts/data/clean.py                   # raw -> data/processed/universe.csv
+python3 scripts/data/qa.py                      # 10/10 data-quality gate
+python3 scripts/data/export_engine_input.py --target ADBE --basket CRM ADSK INTU
+python3 scripts/data/export_engine_input.py --target AVGO --basket ADI INTC AAPL
+python3 scripts/data/export_engine_input.py --target GS  --basket BAC
+python3 scripts/data/export_engine_input.py --target CAT --basket HON
+cmake -S src -B build && cmake --build build -j2
+bash environment/check.sh                       # 52/52 PASS: every gate
+python3 report/build_report.py                  # figures + tables + report.html
+\end{verbatim}
+
+Wall-clock on the sandbox (2 cores): setup $\approx2$ min, clean+QA $\approx40$ s, C++
+build $\approx40$ s, \code{check.sh} (which runs every capture and render script plus all
+test suites) $\approx7$ min, report build $\approx2$ min. Total $\approx12$ min from a
+fresh clone to a finished book. Chapter~\ref{ch:reproducibility} documents the exact
+expected outputs of each step so a run can be verified, not just executed.

@@ -1,0 +1,206 @@
+% =============================================================================
+%  APPENDIX D -- GLOSSARY AND SYMBOL INDEX
+% =============================================================================
+\section{Glossary and symbol index}
+\label{ch:glossary}
+
+\subsection{List of figures and tables}
+
+Every figure and table in the book is machine-generated from a CSV in
+\code{results/tables/}. The lists below are produced by the build itself.
+
+\listoffigures
+\listoftables
+
+\subsection{Symbol index}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.35}
+\small
+\begin{tabular}{p{0.13\linewidth}p{0.42\linewidth}p{0.37\linewidth}}
+\toprule
+Symbol & Meaning & First used \\
+\midrule
+$P_t$, $S_t$ & price at bar $t$; $S_t=\log P_t$ the log price & Ch.~\ref{ch:probability} \\
+$r_t$ & simple (arithmetic) return $P_t/P_{t-1}-1$ & Ch.~\ref{ch:probability} \\
+$z_t$, $x_t$ & log return $\log(1+r_t)$ & Ch.~\ref{ch:probability} \\
+$X_t$ & basket (or vector of factor) returns & Sec.~\ref{sec:saa:baskets} \\
+$\mathbb{E}[\cdot]$, $\operatorname{Var}[\cdot]$ & expectation, variance & Ch.~\ref{ch:probability} \\
+$\rho$ & Pearson correlation; $\rho_s$ Spearman rank correlation & Ch.~\ref{ch:probability} \\
+$\tau$ & Kendall's $\tau$ (sign-agreement measure) & Ch.~\ref{ch:probability} \\
+$\hat\theta$ & OLS estimator; $SST$, $SSR$, $SSE$ sums of squares & Ch.~\ref{ch:ols} \\
+$R^2$, $\bar R^2$ & coefficient of determination; adjusted version & Ch.~\ref{ch:ols} \\
+$s^2$, $\widehat{\operatorname{Var}}(\hat\beta)$ & residual variance; coefficient covariance & Ch.~\ref{ch:ols} \\
+$t_j$, $F$ & $t$-statistic of coefficient $j$; $F$-statistic of a joint null & Ch.~\ref{ch:ols} \\
+$DW$ & Durbin--Watson statistic, $\approx 2(1-\hat\rho_1)$ & Sec.~\ref{sec:ts:autocorr} \\
+$\phi_i$ & AR coefficients; $\theta_j$ MA coefficients & Sec.~\ref{sec:ts:arma} \\
+$\hat\rho_1$ & lag-1 residual autocorrelation & Sec.~\ref{sec:ts:autocorr} \\
+$Q(m)$, $LM$ & Ljung--Box portmanteau; Breusch--Pagan / White statistics & Sec.~\ref{sec:ts:heterosk} \\
+$\lambda$ & ridge (or $\ell_1$) penalty; $\lambda_1,\lambda_2$ elastic-net weights & Ch.~\ref{ch:regularization} \\
+$\beta^{ridge}$, $\beta^{lasso}$, $\beta^{EN}$ & penalised estimators & Ch.~\ref{ch:regularization} \\
+$X^\top X=\sum\lambda_k v_k v_k^\top$ & eigendecomposition driving shrinkage & Ch.~\ref{ch:regularization} \\
+$\kappa$ & condition number $\sigma_{\max}/\sigma_{\min}$; $\kappa(VIF)$ inflation & Ch.~\ref{ch:regularization} \\
+$\hat\beta^{pcr}$ & principal-component regression estimator & Ch.~\ref{ch:regularization} \\
+$PR$, $d_{eff}$ & participation ratio; effective number of independent strategies & Ch.~\ref{ch:regularization} \\
+$Y_t$ & spread $=\log P_t^Y-\beta_t^\top\log P_t^X$ & Sec.~\ref{sec:basemodel} \\
+$\beta_t$ & time-varying hedge vector & Ch.~\ref{ch:kalman} \\
+$u_t$ & OU innovation; $\mathcal{N}(\cdot,\cdot)$ normal density & Ch.~\ref{ch:ou} \\
+$\theta$, $\mu$, $\sigma$ & OU mean-reversion rate, long-run level, volatility & Ch.~\ref{ch:ou} \\
+$\tau_{1/2}$ & half-life $\log 2/\theta$ & Ch.~\ref{ch:ou} \\
+$\sigma_\infty^2$ & stationary variance $\sigma^2/(2\theta)$ & Ch.~\ref{ch:ou} \\
+$\hat\phi$, $\hat c$ & discrete AR(1) estimates; $\hat\theta=1-\hat\phi$ & Ch.~\ref{ch:ou} \\
+$\gamma$, $\rho$ & ADF regression coefficient; $\rho=\gamma+1$ & Sec.~\ref{sec:ts:adf} \\
+$\Delta$ & first-difference operator & Sec.~\ref{sec:ts:adf} \\
+$\mu_t\mid\mathcal{F}_t$ & state prediction; $\mathbf{P}_t$ state covariance & Ch.~\ref{ch:kalman} \\
+$\mathbf{Q}$, $\mathbf{R}$ & process-noise and observation-noise covariances & Ch.~\ref{ch:kalman} \\
+$\mathbf{K}_t$ & Kalman gain & Ch.~\ref{ch:kalman} \\
+$\mathbf{S}_t$, $\mathbf{P}_\infty$ & Riccati iterate; steady-state covariance & Ch.~\ref{ch:kalman} \\
+$q$ & scalar process-noise variance swept in Ch.~\ref{ch:phase8} & Ch.~\ref{ch:phase8} \\
+$\Omega$ & long-run covariance of the spread & Sec.~\ref{sec:ts:hac} \\
+$w_j$, $L$ & HAC kernel weights; bandwidth & Sec.~\ref{sec:ts:hac} \\
+$\hat S^2$, $t^{HAC}$ & HAC variance estimator; HAC $t$-statistic & Sec.~\ref{sec:ts:hac} \\
+$z_t$ & standardised spread & Ch.~\ref{ch:backtestmath} \\
+$h$, $h_{\max}$ & entry threshold; maximum holding period & Ch.~\ref{ch:backtestmath} \\
+$c$, $s_t$ & per-side cost; slippage multiplier & Ch.~\ref{ch:backtestmath} \\
+$\pi_t$, $n_t$ & strategy return at $t$; number of round trips per year & Ch.~\ref{ch:backtestmath} \\
+$SR$, $SR_{ann}$ & Sharpe ratio, per bar and annualised ($\sqrt{252}$) & Ch.~\ref{ch:backtestmath} \\
+$MDD$ & maximum drawdown & Ch.~\ref{ch:backtestmath} \\
+$\alpha$, $\beta$, $1-\beta$ & significance level; type-II error; power & Ch.~\ref{ch:multipletesting} \\
+$M$, $M_{eff}$ & number of strategies tested; effective (decorrelated) number & Ch.~\ref{ch:multipletesting} \\
+$\alpha_{Bonf}$ & Bonferroni level $\alpha/M$ & Ch.~\ref{ch:multipletesting} \\
+$V_{RC}$, $p_{SPA}$ & Reality Check and SPA $p$-values & Ch.~\ref{ch:multipletesting} \\
+$\bar d$, $DM$ & mean loss difference; Diebold--Mariano statistic & Ch.~\ref{ch:multipletesting} \\
+$T^*$ & sample size required for power & Sec.~\ref{sec:mt:power} \\
+$SR_0$, $\hat\gamma_3$, $\hat\gamma_4$ & benchmark Sharpe; skewness; excess kurtosis & Sec.~\ref{sec:mt:dsr} \\
+$DSR$ & deflated Sharpe ratio & Sec.~\ref{sec:mt:dsr} \\
+$VaR_\alpha$, $CVaR_\alpha$ & value at risk; conditional (expected shortfall) & Sec.~\ref{sec:bt:risk} \\
+$\mathbf{w}$, $\boldsymbol\Sigma$ & portfolio weights; return covariance & Sec.~\ref{sec:bt:sizing} \\
+$L$, $U$ & cache line size; useful bytes per line & Ch.~\ref{ch:systems} \\
+$\eta$ & flop-per-byte ratio; $\beta$ the machine balance & Ch.~\ref{ch:systems} \\
+$\gamma_s$ & serial fraction in Amdahl's law & Ch.~\ref{ch:systems} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Glossary of terms}
+
+\begin{description}
+  \item[Adjusted close] A price series adjusted for splits and dividends, so that its
+    returns are total returns. Used for all return series in this project.
+  \item[Bonferroni correction] The most conservative multiplicity adjustment: compare each
+    $p$-value to $\alpha/M$, where $M$ is the number of hypotheses tested.
+  \item[Breadth] The number of independent opportunities a strategy exploits. In
+    Grinold's law, $IR=IC\sqrt{\text{breadth}}$.
+  \item[Cointegration] A long-run equilibrium relation between non-stationary series whose
+    linear combination is stationary. Distinct from correlation, which is a statement about
+    co-movement of differences.
+  \item[Conditional value at risk (CVaR)] The expected loss given that the loss exceeds
+    \code{VaR}. Coherent, unlike \code{VaR}.
+  \item[Cost model] The function mapping a trade to its cash cost: commission, spread,
+    impact and (here) an optional slippage multiplier.
+  \item[Data snooping] The bias introduced by selecting the best of many strategies after
+    seeing the data. Quantified in this project by the \code{M=44} audit.
+  \item[Deflated Sharpe Ratio (DSR)] The probability that a strategy's Sharpe ratio exceeds
+    the benchmark implied by the number of trials, after correcting for skewness and
+    kurtosis.
+  \item[Diebold--Mariano (DM) test] A test of equal predictive accuracy between two
+    forecasts, using a HAC variance of the loss differential.
+  \item[Drawdown] The decline from a running peak of an equity curve. The maximum drawdown
+    is the largest such decline in the sample.
+  \item[Engle--Granger procedure] Estimate the cointegrating vector by OLS, then test the
+    residual for a unit root; rejection implies cointegration.
+  \item[Filter / deadband] A no-trade band inside which signals are ignored, used to
+    suppress trading on noise.
+  \item[Flop-per-byte ratio ($\eta$)] Arithmetic intensity: floating-point operations per
+    byte moved between memory and cache. Determines whether a kernel is compute- or
+    memory-bound.
+  \item[GARCH] A model of time-varying volatility; mentioned in Sec.~\ref{sec:ts:heterosk} as
+    not implemented here.
+  \item[Gross / net] Before / after transaction costs. A strategy quoted only gross has
+    not been tested against the thing that usually kills it.
+  \item[HAC (Newey--West)] Heteroskedasticity and autocorrelation consistent covariance
+    estimation. Inflates standard errors when residuals are serially correlated.
+  \item[Half-life] The time for a mean-reverting process to close half the gap to its
+    mean: $\tau_{1/2}=\log 2/\theta$.
+  \item[Hedged portfolio] A book with the market factor neutralised (here, beta $\approx0$
+    by construction and by the \code{portfolio\_summary} audit).
+  \item[In-sample / out-of-sample (IS / OOS)] Estimated on the training window / evaluated
+    on the held-out window. All headline numbers here are OOS.
+  \item[Johansen test] A maximum-likelihood test of the cointegration rank of a vector
+    system; gives the number of independent cointegrating relations.
+  \item[Kalman filter] A recursive minimum-variance estimator of a latent state from noisy
+    observations. Used here for a time-varying hedge.
+  \item[KPSS test] Tests the null of stationarity; complements the ADF test, whose null is
+    a unit root. Agreement of both is required for a confident verdict.
+  \item[Look-ahead bias] Using information at time $t$ that was not available until after
+    $t$. Eliminated here by the strict \code{train/test} split and walk-forward estimation.
+  \item[Maximum holding period] A hard stop that closes a position after $h_{\max}$ bars
+    regardless of signal, bounding tail exposure.
+  \item[Newey--West bandwidth] The number of lags $L$ included in the HAC estimator;
+    $L\to\infty$ recovers OLS variance, $L=0$ recovers White's estimator.
+  \item[Non-stationarity] A property of a series whose mean, variance or autocovariance
+    depends on time. Financial prices are typically non-stationary; their returns are not.
+  \item[Ornstein--Uhlenbeck (OU) process] The continuous-time mean-reverting Gaussian
+    process; the theoretical model of a cointegrated spread.
+  \item[Participation ratio (PR)] $\left(\sum\lambda_k\right)^2/\sum\lambda_k^2$: the
+    effective number of equally-weighted independent directions in a covariance matrix.
+  \item[Plateau] The region of the parameter surface where performance is insensitive to
+    the parameter; the opposite of a sharp optimum, which is a sign of overfitting.
+  \item[Power] The probability that a test rejects a false null. Low power means an
+    inability to detect an effect, not evidence of its absence.
+  \item[Reality Check / SPA] Bootstrap tests of the null that the best of $M$ strategies
+    has no predictive superiority over a benchmark. Both fail to reject here.
+  \item[RESET test] Ramsey's regression specification error test: augment the model with
+    powers of the fitted values and test their joint significance.
+  \item[Sharpe ratio] Mean excess return divided by its standard deviation, annualised by
+    $\sqrt{252}$ for daily data. Its sampling variance depends on skewness and kurtosis.
+  \item[Slippage multiplier] A factor applied to the per-side cost to stress-test
+    execution quality; swept in \code{backtest\_summary}.
+  \item[Spurious regression] A regression between two independent non-stationary series
+    that appears highly significant; the canonical failure of ignoring unit roots.
+  \item[Stationary bootstrap] A resampling scheme with random (geometric) block lengths
+    that preserves the mean block length while producing stationary resamples.
+  \item[Structure-of-arrays (SoA)] A memory layout storing each field in its own contiguous
+    array; the opposite of array-of-structures (AoS).
+  \item[Variance inflation factor (VIF)] $1/(1-R_j^2)$: how much the variance of a
+    coefficient is inflated by collinearity with the other regressors.
+  \item[Walk-forward] Estimating on a trailing window and trading the next bar, rolling
+    forward in time; the operational form of no look-ahead.
+\end{description}
+
+\subsection{Abbreviations}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{p{0.10\linewidth}p{0.36\linewidth}p{0.10\linewidth}p{0.36\linewidth}}
+\toprule
+ADF & Augmented Dickey--Fuller & IC & information coefficient (rank correlation) \\
+AoS & array of structures & IS & in-sample \\
+ARMA & autoregressive moving average & LOO & leave-one-out \\
+BP & Breusch--Pagan & LRV & long-run variance \\
+CVaR & conditional value at risk & MA & moving average \\
+DM & Diebold--Mariano & MDD & maximum drawdown \\
+DSR & deflated Sharpe ratio & MLP & multi-layer perceptron \\
+EN & elastic net & OLS & ordinary least squares \\
+EZ & Engle--Granger (two-step) & OOS & out-of-sample \\
+FDR & false discovery rate & PCA/PCR & principal component (regression) \\
+GBM & gradient-boosted trees & PR & participation ratio \\
+GS & Goldman Sachs (basket label) & QC & quality control \\
+HAC & heteroskedasticity/autocorrelation consistent & RC & White's Reality Check \\
+HLM & heteroskedasticity, lag, mis-specification & RESET & regression specification error test \\
+IR & information ratio & RMS & root mean squared \\
+JPX & Japan Exchange (basket label) & SoA & structure of arrays \\
+KPSS & Kwiatkowski--Phillips--Schmidt--Shin & SPA & Hansen's superior predictive ability \\
+L-BFGS & limited-memory Broyden--Fletcher--Goldfarb--Shanno & SR & Sharpe ratio \\
+L1/L2 & $\ell_1$/$\ell_2$ norm & VIF & variance inflation factor \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{1em}
+\begin{center}
+\rule{0.6\linewidth}{0.4pt}\\[4pt]
+\emph{End of the book. Every number above it was produced by code you can run.}\\[4pt]
+\rule{0.6\linewidth}{0.4pt}
+\end{center}

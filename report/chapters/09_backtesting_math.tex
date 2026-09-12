@@ -1,0 +1,358 @@
+% =============================================================================
+%  CHAPTER 9 -- THE MATHEMATICS OF BACKTESTING
+% =============================================================================
+\section{The mathematics of backtesting}
+\label{ch:backtestmath}
+
+A backtest is an arithmetic machine that converts a signal rule and a price history into
+a distribution of P\&L outcomes. Every one of its components has a formula, and every
+formula has a way to be silently wrong. This chapter derives them.
+
+\subsection{The P\&L recursion}
+\label{sec:bt:recursion}
+
+Let $q_t$ be the position vector held \emph{during} bar $t$ (decided using
+$\mathcal F_{t-1}$), $r_t$ the vector of bar-$t$ returns, and $c_t$ the cost paid at
+$t$. The strategy's dollar-neutral book is $q_t = \pi_t/g_t$ with $\pi_t\in\{+1,0,-1\}$
+the direction from \eqref{eq:saa:policy}, so that the bar-$t$ P\&L on \$1 gross is
+\begin{equation}
+  \mathrm{P\&L}_t \;=\; q_t^{\top}r_t \;-\; c_t,
+  \qquad
+  c_t \;=\; c\,\lVert q_t - q_{t-1}\rVert_1 \;+\; \text{impact}_t ,
+  \label{eq:bt:pnl}
+\end{equation}
+where $\lVert q_t-q_{t-1}\rVert_1$ is the traded gross notional (turnover) and $c$ the
+one-way proportional cost. Cumulative NAV is the running product (or, in log terms, the
+running sum)
+\begin{equation}
+  \mathrm{NAV}_T \;=\; \prod_{t=1}^{T}\bigl(1+\mathrm{P\&L}_t\bigr),
+  \qquad
+  \log\mathrm{NAV}_T = \sum_{t}\log(1+\mathrm{P\&L}_t)\approx\sum_t \mathrm{P\&L}_t .
+  \label{eq:bt:nav}
+\end{equation}
+
+Three indexing details that decide whether a backtest is honest:
+\begin{enumerate}
+  \item $q_t$ must be $\mathcal F_{t-1}$-measurable. Our decision uses data through
+    close($t-1$) and earns on bar $t$. Equivalently: a signal computed at close($t$) is
+    executed at the close of $t+1$ --- the ``one-bar delay'' that
+    \code{src/engine/spread\_backtest.h} implements and \code{test/engine\_tests.cpp}
+    asserts.
+  \item Cost is charged on the \emph{change} in position, at the bar the change occurs.
+    Charging it on the level, or at the wrong bar, silently doubles or halves the drag.
+  \item The spread $z_t$ that triggers the trade at $t$ must be computed with a hedge
+    estimated through $t-1$ (equation~\eqref{eq:saa:regression}); a hedge estimated
+    through $t$ would make the residual artificially small exactly on the days that
+    matter.
+\end{enumerate}
+
+\subsection{Lookahead bias, formally}
+\label{sec:bt:lookahead}
+
+A backtest is lookahead-free if for every $t$, the position $q_t$ is measurable with
+respect to $\mathcal F_{t-1}$ and the cost $c_t$ is charged at prices available in
+$\mathcal F_t$. The five most common violations, all of which were explicitly designed
+out here:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{0.30\linewidth}p{0.32\linewidth}p{0.30\linewidth}}
+\toprule
+Violation & Why it flatters & This project's defence \\
+\midrule
+Standardising by full-sample $\sigma_S$ & Uses future volatility to size today's $z$ &
+$\hat\sigma_{S,t}$ from the trailing window only \eqref{eq:saa:z} \\
+Basket selected by full-sample performance & Chooses the relationship that already reverted &
+Baskets fixed a priori by sub-industry (Phase~\ref{ch:phase1}); all scanned variants are
+counted in $M$ \\
+Hyper-parameters tuned on the test period & Fits the reported numbers &
+train 2010--18 / val 2019--21 / test 2022--26, test touched once \\
+Execution at the signal bar's price & Buys the mispricing at the price that defines it &
+One-bar delay, asserted by unit test \\
+Forward-filling missing prices & Trades on stale prices as if fresh &
+Strict balanced panel per basket: \code{export\_engine\_input.py} drops any date with a
+missing name \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{remark}[What we do \emph{not} defend against]
+\textbf{Survivorship} (Section~\ref{sec:data:survivorship}): the 195-name universe is
+those names Yahoo returns a full history for, so delisted and acquired names are absent.
+This biases every result \emph{upward} and cannot be fixed without a historical
+membership list plus a delisted-price source. \textbf{Borrow availability and cost}: the
+short leg is assumed borrowable at zero special-borrow cost; for a crowded short this is
+optimistic by 50--300\,bps/year. \textbf{Fill realism}: fills are assumed at the bar
+close with no slippage beyond the modelled cost; a real execution would use VWAP or a
+limit order and would sometimes not fill. Each is listed in
+Chapter~\ref{ch:nongoals}.
+\end{remark}
+
+\subsection{Walk-forward validation, and what it does not fix}
+\label{sec:bt:walkforward}
+
+Cross-validation on i.i.d.\ data randomly partitions the sample. On time series that
+leaks, so we use \emph{walk-forward} (expanding or rolling) splits: fit on
+$[1,\dots,t]$, predict $[t+1,\dots,t+h]$, roll forward. Two variants:
+\begin{itemize}
+  \item \textbf{Anchored/expanding:} the training start is fixed, the window grows. Uses
+    all history, but old regimes retain influence forever. Phase~\ref{ch:phase9}'s
+    nonlinear forecasters retrain quarterly on an expanding window from warm-up onward.
+  \item \textbf{Rolling:} a fixed-length window slides. Adapts to regime change, forgets
+    old data. Phases~\ref{ch:phase4}--\ref{ch:phase7} use $W\in\{60,120,180,252\}$,
+    baseline 120.
+\end{itemize}
+The rolling hedge is itself a form of walk-forward validation applied to the hedge: the
+model is never refit on future data, and the diagnostic consequence is dramatic
+(Table~\ref{tab:diag_stationarity}) --- the static full-sample hedge residual has a unit
+root while the rolling-hedge residual does not.
+
+\paragraph{What walk-forward does not fix.} It prevents leakage within a single
+configuration. It does \emph{not} prevent leakage across configurations: if you try 44
+configurations, each internally walk-forward-clean, and report the best, you have still
+snooped. That is the subject of Chapter~\ref{ch:multipletesting}, and it is why
+Phase~\ref{ch:phase10} audits the count rather than trusting the split. A further
+refinement we did not implement, and should: \emph{purging and embargo}
+\cite{lopezdeprado2018advances} --- removing training samples whose forward-return label
+overlaps the test window, and adding a gap after it, to eliminate the leakage created by
+the $h$-bar overlapping targets of Section~\ref{sec:nonlinear:target}. With $h=5$ this is
+a 5-bar contamination on each side of every split; small, but it is a real bias in the
+direction of optimism.
+
+\subsection{Transaction costs}
+\label{sec:bt:cost}
+
+\subsubsection{Proportional cost}
+
+The baseline model charges $c$ on traded notional at both open and close, on both legs:
+\begin{equation}
+  \text{cost per round trip} \;=\; 2c\cdot \text{(gross notional)} .
+  \label{eq:cost:proportional}
+\end{equation}
+With $c=10$ bps one-way that is 20 bps per round trip on \$1 gross. The sweep in
+Table~\ref{tab:backtest_base} covers $c\in\{0,5,10,20,50\}$ bps and gives the strategy's
+cost-break-even explicitly: net Sharpe is $0.385$ at $c=0$, $0.219$ at 5 bps, $0.050$ at
+10 bps, $-0.293$ at 20 bps, $-1.263$ at 50 bps. Interpolating, the \textbf{break-even
+one-way cost is $\approx11$ bps} --- barely above the baseline assumption. A strategy
+whose entire edge disappears at 11 bps is not robust; it is on a knife edge, and the
+knife edge is drawn by the cost assumption rather than by the market.
+
+\subsubsection{Square-root market impact}
+
+\cite{almgren2005} and the empirical literature that followed establish that the price
+move caused by executing $Q$ shares scales as the square root of participation:
+\begin{equation}
+  \text{impact} \;=\; Y\,\sigma\,\sqrt{\frac{Q}{V}},
+  \label{eq:impact}
+\end{equation}
+with $\sigma$ the asset's daily volatility, $V$ its average daily volume, and $Y\approx
+0.1$--$1$ a calibration constant. Two derivations of the square-root law exist in the
+literature: a dimensional/invariance argument (the only scale-free function of
+participation consistent with a constant price-impact elasticity), and models of order
+flow against a finite-depth book where each incremental unit consumes liquidity at a
+marginally worse price, giving a concave (square-root-like) cost curve.
+
+Why it is second-order here: positions are normalised to \$1 gross, and the assets are
+the most liquid large-caps in the world. For ADBE with $V\approx3\times10^6$ shares/day at
+$\approx\$500$, \$1 of notional is a participation of $\sim10^{-9}$, so
+$\sqrt{Q/V}\sim3\times10^{-5}$ and impact is $\sim10^{-5}\sigma$, i.e.\ utterly
+negligible. The honest statement is that \emph{this backtest has no capacity}: it measures
+a per-dollar edge and says nothing about how many dollars can be traded. Capacity is
+where \eqref{eq:impact} binds, and it is the first thing a fund would need to compute.
+Solving \eqref{eq:impact} for the participation that costs 10 bps at $\sigma=2\%$,
+$Y=0.5$: $\sqrt{Q/V}=0.001/(0.5\times0.02)=0.1$, i.e.\ $Q/V=1\%$ of daily volume --- about
+\$15M/day in ADBE at the stated volume, so of order \$15M of notional traded per day per
+name before impact alone equals the whole proportional-cost budget. That is a real number,
+and it is reported here rather than left implicit.
+
+\subsubsection{Borrow cost}
+
+A short position pays the stock-loan rate, typically 25--50 bps/year on easy-to-borrow
+large caps and several percent on specials. On a book that is short \$0.5 of every \$1
+gross for $\approx16$ bars, 30 bps/year costs $\approx0.5\times0.003\times16/252\approx
+10^{-4}$ per trade, i.e.\ $\sim1$ bp per round trip: small versus the 20 bps of
+proportional cost but not zero, and it scales with how crowded the short is. Not modelled
+in the baseline; listed as a non-goal and as a first-order fix for any live version.
+
+\subsection{Performance statistics and their sampling error}
+\label{sec:bt:stats}
+
+\subsubsection{Sharpe ratio}
+
+\begin{equation}
+  \widehat{\mathrm{SR}} \;=\; \frac{\bar r}{s_r},
+  \qquad
+  \bar r=\frac1T\sum_t r_t,\quad
+  s_r^2=\frac{1}{T-1}\sum_t(r_t-\bar r)^2 ,
+  \label{eq:sharpe}
+\end{equation}
+computed on daily P\&L and annualised by $\sqrt{252}$ \eqref{eq:annualization}. The
+excess-return convention (subtract the risk-free rate) is omitted because the book is
+fully collateralised and market-neutral, and over 2010--2026 the risk-free rate would add
+a constant drift that is not a property of the strategy; we note it as a presentational
+choice that flatters the ratio by roughly the financing rate.
+
+\paragraph{Sampling distribution.} \cite{lo2002statistics} derives, for i.i.d.\ returns,
+\begin{equation}
+  \Var\bigl(\widehat{\mathrm{SR}}\bigr) \;\approx\; \frac{1}{T}\Bigl[1 +
+  \tfrac12\widehat{\mathrm{SR}}^{\,2}\Bigr]
+  \;+\; \text{skew/kurtosis corrections},
+  \label{eq:sharpevar}
+\end{equation}
+so $\mathrm{se}(\widehat{\mathrm{SR}}_d)\approx1/\sqrt T$ for a small daily Sharpe. Over
+$T=4{,}190$ bars that is $0.0155$ per day, i.e.\ $0.0155\times\sqrt{252}=0.245$
+annualised. \textbf{The standard error of our headline net Sharpe ($0.05$) is roughly five
+times its own value.} This one sentence is the statistical core of the project's negative
+result and it needs no multiple-testing machinery at all: a single-basket daily strategy
+on sixteen years of data cannot distinguish a Sharpe of $0.05$ from $0$ or from $0.5$.
+With non-normal returns, \eqref{eq:sharpevar} acquires terms in the sample skewness
+$\hat\gamma_3$ and excess kurtosis $\hat\gamma_4$:
+\begin{equation}
+  \Var\bigl(\widehat{\mathrm{SR}}\bigr) \;\approx\; \frac{1}{T}\Bigl[1 -
+  \hat\gamma_3\widehat{\mathrm{SR}} + \tfrac{\hat\gamma_4-1}{4}\widehat{\mathrm{SR}}^{\,2}\Bigr],
+  \label{eq:sharpevar2}
+\end{equation}
+so negative skew (the pairs-trading signature: many small wins, occasional large losses)
+\emph{increases} the variance of the estimate --- you are even less sure than
+\eqref{eq:sharpevar} suggests. Because our returns are serially correlated, the correct
+statement uses \eqref{eq:loadjust}, and the bootstrap confidence intervals of
+Phase~\ref{ch:phase10} (stationary bootstrap, 1{,}200 draws) are the numbers we quote.
+
+\subsubsection{Maximum drawdown}
+
+With $\mathrm{NAV}_t$ the running net asset value and
+$M_t=\max_{s\le t}\mathrm{NAV}_s$ its running peak,
+\begin{equation}
+  D_t = 1-\frac{\mathrm{NAV}_t}{M_t},\qquad
+  \mathrm{MaxDD} = \max_{t} D_t .
+  \label{eq:maxdd}
+\end{equation}
+MaxDD is a path statistic, not a moment: it depends on the \emph{order} of returns, so it
+cannot be computed from the mean and variance and has no simple closed-form sampling
+distribution. For a Brownian motion with drift $\mu$ and volatility $\sigma$, the expected
+maximum drawdown grows like $(\sigma/\mu)\log T$ for large $T$ --- which is why a strategy
+with a small Sharpe has a drawdown that grows without bound in expectation, and why our
+measured MaxDD of $0.419$ on \$1 gross (Table~\ref{tab:backtest_base}) with a net Sharpe
+of $0.05$ is exactly the profile the theory predicts for a near-zero-edge book. The
+Calmar ratio (annual return / MaxDD) is $0.0038/0.419=0.009$: as a risk-adjusted measure
+of the traded book this is indistinguishable from zero.
+
+\subsubsection{Turnover, holding period, and the cost-drag identity}
+
+Define turnover as traded notional per unit of gross notional per year,
+$\mathrm{TO} = \frac{252}{T}\sum_t\lVert q_t-q_{t-1}\rVert_1$. With a proportional cost
+$c$ per unit traded,
+\begin{equation}
+  \text{annual cost drag} \;=\; c\cdot\mathrm{TO},
+  \qquad
+  \text{net return} \;=\; \text{gross return} - c\cdot\mathrm{TO}.
+  \label{eq:costdrag}
+\end{equation}
+Our baseline: $198$ round trips over $16.6$ years $=11.9$ trades/year, each trading
+$\approx2$ units of gross notional (open and close), so $\mathrm{TO}\approx23.9$/year and
+the drag at $c=0.001$ is $2.39\%$/year. Measured: gross annual return $3.02\%$, net
+$0.38\%$ (Table~\ref{tab:backtest_base}) --- a drag of $2.64\%$, matching
+\eqref{eq:costdrag} to within the compounding and impact terms. \textbf{Costs consume
+87\% of the gross return.} Every improvement in this project that raised net Sharpe did so
+by reducing TO, not by raising gross: ridge (165 trades vs.\ 198), the smooth Kalman
+(61 trades), higher entry thresholds, longer windows. Equation~\eqref{eq:costdrag} is the
+reason.
+
+\subsection{Risk measures: VaR, CVaR, and coherence}
+\label{sec:bt:risk}
+
+For a loss variable $L$ (positive = loss) and confidence $1-\alpha$:
+\begin{align}
+  \mathrm{VaR}_{1-\alpha} &= \inf\{x: P(L\le x)\ge 1-\alpha\} &&\text{(the } \alpha\text{-quantile of loss)}, \label{eq:var}\\
+  \mathrm{CVaR}_{1-\alpha} &= \E\bigl[L \mid L>\mathrm{VaR}_{1-\alpha}\bigr] &&\text{(expected loss beyond VaR)}. \label{eq:cvar}
+\end{align}
+Two estimators: \emph{historical} (the empirical quantile of realized daily P\&L --- what
+we use) and \emph{parametric} ($\mu+\sigma z_\alpha$ under normality). The historical
+version makes no distributional assumption but inherits the sample's blind spots: our
+panel starts in 2010, so it contains no 2008, and the worst days it knows about are
+March 2020 and 2022.
+
+\cite{artzner1999coherent} axiomatise a \emph{coherent} risk measure as one satisfying
+monotonicity, translation invariance, positive homogeneity, and \emph{subadditivity}
+($\rho(X+Y)\le\rho(X)+\rho(Y)$: diversification never increases risk). CVaR is coherent;
+VaR is not --- two disjoint tail risks can each have small VaR while their sum has a large
+one. This matters concretely for a book of spread strategies whose tails are correlated in
+crises. Measured (Table~\ref{tab:portfolio_summary}): the inverse-vol book has
+VaR$_{95}=\$0.0039$/day and CVaR$_{95}=\$0.0063$ on \$1 gross, versus $\$0.0041$ and
+$\$0.0068$ for equal weight --- a $4.9\%$ and $7.4\%$ tail reduction respectively, and
+CVaR improves more than VaR, i.e.\ the weighting is genuinely cutting the far tail rather
+than shifting the quantile.
+
+\subsection{Position sizing: inverse volatility and the water-fill}
+\label{sec:bt:sizing}
+
+\subsubsection{Inverse-vol weights}
+
+Given per-strategy daily P\&L volatilities $\sigma_1,\dots,\sigma_m$ estimated on a
+trailing 252-bar window, the inverse-vol allocation is
+\begin{equation}
+  w_i \;=\; \frac{1/\sigma_i}{\sum_{j=1}^{m} 1/\sigma_j},
+  \qquad \sum_i w_i = 1 .
+  \label{eq:inversevol}
+\end{equation}
+Derivation and interpretation: it is the solution of
+$\min_w w^{\top}Dw$ subject to $\mathbf 1^{\top}w=1$, where $D=\diag(\sigma_1^2,\dots,
+\sigma_m^2)$ --- i.e.\ minimum-variance allocation under the (deliberately crude)
+assumption that strategy returns are \emph{uncorrelated}. The Lagrangian
+$\mathcal L = w^{\top}Dw-\gamma(\mathbf 1^{\top}w-1)$ gives $2Dw=\gamma\mathbf 1$, so
+$w\propto D^{-1}\mathbf 1$, i.e.\ $w_i\propto1/\sigma_i^2$. The version implemented in
+\code{src/portfolio/risk.h} uses $1/\sigma_i$ rather than $1/\sigma_i^2$ --- the standard
+``risk-parity'' convention, in which each strategy contributes \emph{equal risk}
+$w_i\sigma_i$ rather than equal variance. Equal risk contribution is the more robust
+choice when the $\sigma$ estimates are noisy, because $1/\sigma^2$ doubles the sensitivity
+to estimation error. With full covariance $\Sigma$, the generalisation is
+$w\propto\Sigma^{-1}\mathbf 1$ (minimum variance), which requires estimating
+$m(m-1)/2$ correlations --- for $m=4$ that is 6 more parameters on 252 observations, and
+we deliberately do not pay for them.
+
+\subsubsection{The concentration cap and the water-fill}
+
+Uncapped inverse-vol concentrates the book in whichever strategy happens to have had a
+quiet year --- a well-known failure mode, since low recent volatility is not low future
+volatility. We cap any single strategy at $45\%$ and redistribute the excess to the
+uncapped ones, iterating (``water-filling''):
+
+\begin{enumerate}
+  \item Compute raw weights $w^{(0)}$ from \eqref{eq:inversevol}.
+  \item Let $A=\{i: w_i > \text{cap}\}$; set $w_i=\text{cap}$ for $i\in A$; collect the
+    surplus $s=\sum_{i\in A}(w_i-\text{cap})$.
+  \item Redistribute $s$ proportionally among the uncapped names; renormalise so
+    $\sum_i w_i = 1$.
+  \item Repeat until no name exceeds the cap. If $\text{cap}\times m<1$ the constraint set
+    is empty and the routine reports infeasibility rather than silently violating it.
+\end{enumerate}
+
+At every monthly rebalance ($21$ bars) the driver asserts $\sum_i w_i=1$ (book budget),
+$w_i\le0.45$ (concentration), gross exposure $\le1.05$ and net exposure $\le0.10$
+(\code{risk::within\_limits}). These assertions are the difference between ``the strategy
+has risk controls'' and ``the strategy's risk controls were verified to hold on every bar
+of the backtest''. The C++ primitives (\code{inverse\_vol\_weights},
+\code{gross\_exposure}, \code{net\_exposure}, \code{within\_limits}) are unit-tested
+independently of market data; the water-fill lives in the Python driver
+\code{scripts/analysis/capture\_portfolio.py::cap\_weights}.
+
+\subsection{Regime conditioning}
+\label{sec:bt:regimes}
+
+A single set of full-sample statistics hides the fact that a mean-reversion book behaves
+differently across volatility regimes. Two decompositions are reported
+(Table~\ref{tab:portfolio_regime}):
+\begin{itemize}
+  \item \textbf{Volatility terciles.} Sort days by a trailing market-volatility proxy and
+    split into three equal groups of 1{,}376 days. Measured net Sharpe: $-0.183$ (low),
+    $-0.781$ (mid), $-0.344$ (high), with VaR$_{95}$ rising monotonically
+    $0.0028\to0.0039\to0.0051$. The non-monotonicity in Sharpe is itself informative: the
+    middle tercile --- calm enough to trade, unsettled enough to break relationships ---
+    is the worst environment.
+  \item \textbf{Named stress windows.} COVID-2020 (221 days): net Sharpe $-0.206$,
+    VaR$_{95}$ $0.0056$. The 2022 selloff (251 days): net Sharpe $-1.306$, VaR$_{95}$
+    $0.0047$. The 2022 window is the strategy's worst by a wide margin: rising rates plus
+    a rotation out of growth broke exactly the software/semis relationships the baskets
+    were built on. 2008 is \emph{outside the panel} (data begins 2010-01-04) and cannot be
+    tested --- disclosed rather than imputed.
+\end{itemize}

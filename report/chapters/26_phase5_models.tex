@@ -1,0 +1,192 @@
+% =============================================================================
+%  CHAPTER 18 -- PHASE 5: BASELINE MODEL COMPARISON
+% =============================================================================
+\section{Phase 5 --- Baseline model comparison: OLS, Ridge, Lasso, Elastic Net, PCR}
+\label{ch:phase5}
+
+\textbf{Reproduce it:} \code{python3 scripts/analysis/compare\_models.py \&\& python3
+scripts/plotting/render\_model\_comparison.py}.\\
+\textbf{Math used:} Chapter~\ref{ch:regularization} in full, plus
+Sections~\ref{sec:ols:multicol} and \ref{sec:bt:walkforward}.\\
+\textbf{Artifacts:} \code{scripts/model/baseline\_models.py},
+\code{results/tables/model\_compare\_\{summary,sweep\}.csv},
+\code{results/figures/model\_compare\_\{sharpe,ic,stability\}.png},
+\code{report/tables/model\_compare.tex}.
+
+\subsection{Goal}
+
+The first genuine research question: \emph{does the choice of hedge estimator change the
+traded result, net of cost?} Five estimators --- OLS, Ridge, Lasso, Elastic Net, and
+principal-component regression --- through one identical causal, cost-aware pipeline, with
+hyper-parameters chosen on a validation window and reported on a disjoint test window.
+
+\subsection{Design: everything fixed except the estimator}
+
+For each estimator the Phase~\ref{ch:phase4} hedge is reproduced exactly: at bar $t$, fit
+$y=\alpha+x^{\top}\beta$ on the trailing window $W=120$ ending at $t-1$ (log prices),
+standardise the bar-$t$ residual by the in-window residual $\sigma$ to get $z_t$, feed
+$z_t$ through the two-band policy, execute one bar later, pay 10\,bps one-way. All five
+therefore see the same data, the same costs, and the same execution delay. They differ
+\emph{only} in how $\hat\beta$ is computed --- which is what makes the comparison an
+experiment rather than a collection of anecdotes.
+
+\paragraph{Why strategy-level metrics rather than $R^2$.} On log-price levels the in-sample
+$R^2$ of any of these regressions is $\approx0.98$ and essentially uninformative
+(Section~\ref{sec:prob:spurious}). So the comparison is made on:
+\begin{itemize}
+  \item \textbf{net Sharpe}, full sample (2010--2026) and test period (2022+);
+  \item \textbf{out-of-sample information coefficient}: $\Corr(z_t,\ R^{\text{pos}}_{t,t+21})$,
+    where $R^{\text{pos}}$ is the realized gross return of the position the signal implies
+    --- a direct measure of predictive content in the units the strategy trades
+    (Section~\ref{sec:nonlinear:target});
+  \item \textbf{coefficient instability}: the time-average of each weight's
+    $\sigma/|\mu|$ over the test period --- a proxy for how much the hedge churns, and
+    therefore for how much turnover the estimator induces;
+  \item \textbf{nonzero fraction} (did the penalty actually sparsify?) and
+    \textbf{milliseconds per fit} (is the estimator affordable at scale?).
+\end{itemize}
+
+\paragraph{Hyper-parameter selection.} Validation window 2019--2021, objective = net
+Sharpe, coarse grid: Ridge $\alpha\in\{0.1,1,10\}$; Lasso/ElasticNet
+$\alpha\in\{10^{-4},10^{-3},10^{-2}\}$ (with \code{l1\_ratio}$=0.5$) on
+column-standardised features; PCR $k\in\{1,2,3\}$. Selected: Ridge $\alpha=10$,
+Lasso $\alpha=10^{-2}$, ElasticNet $\alpha=10^{-2}$, PCR $k=1$. All reported test figures
+are then strictly out-of-sample on 2022--2026. The full sweep is kept in
+\code{results/tables/model\_compare\_sweep.csv} so the selection is auditable --- and so
+that every grid point can be counted as a hypothesis in Phase~\ref{ch:phase10}.
+
+\begin{remark}[Honesty: the validation window was a bad year to select on]
+Every selected configuration has a \emph{negative} validation net Sharpe (OLS $-0.86$,
+Ridge $-0.63$, Lasso $-0.38$, ElasticNet $-0.73$, PCR $-0.11$): the 2019--2021 window is
+one in which the strategy loses money at 10\,bps for every estimator. Selecting the
+``least bad'' on a uniformly negative window is a weak selection rule, and the table shows
+it: the validation ranking (PCR best, Lasso second) does not match the test ranking (Ridge
+best). Reporting the sweep rather than only the selected row is what makes this visible.
+\end{remark}
+
+\subsection{Results}
+
+\input{tables/model_compare.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/model_compare_sharpe.png}
+\caption{Gross versus net annualised Sharpe by hedge estimator, out-of-sample on
+2022--2026 (hyper-parameters chosen on 2019--2021) with the full-sample values for
+context.}
+\label{fig:mc_sharpe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/model_compare_ic.png}
+\caption{Out-of-sample information coefficient: correlation of the traded $z_t$ with the
+realized 21-bar gross position return, test period 2022--2026. Every estimator is
+positive; the magnitudes are $0.125$--$0.211$.}
+\label{fig:mc_ic}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/model_compare_stability.png}
+\caption{Causal walk-forward hedge weights over the full sample: the weight on
+\code{CRM} and the time-varying hedge norm $\lVert\beta_t\rVert_2$ for each estimator.
+The OLS trace is visibly the noisiest; ridge and PCR are smooth.}
+\label{fig:mc_stab}
+\end{figure}
+
+Table~\ref{tab:model_compare} is the generated full record; the curated extract below
+is the same data read column by column (all net figures at 10\,bps one-way):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Estimator & \multicolumn{2}{c}{Full sample} & \multicolumn{2}{c}{Test 2022+} & OOS IC & Instab. & ms/fit & Trades \\
+& gross SR & net SR & gross SR & net SR & ($h{=}21$) & & & \\
+\midrule
+OLS (none)          & $0.391$ & $\mathbf{+0.050}$ & $-0.017$ & $-0.302$ & $0.125$ & $0.998$ & $0.67$ & 48 \\
+Ridge ($\alpha{=}10$) & $0.341$ & $\mathbf{+0.094}$ & $+0.198$ & $-0.031$ & $0.150$ & $0.935$ & $1.50$ & 45 \\
+Lasso ($\alpha{=}10^{-2}$) & $0.149$ & $+0.007$ & $+0.060$ & $-0.103$ & $0.145$ & $1.098$ & $1.21$ & 44 \\
+ElasticNet          & $0.163$ & $-0.032$ & $+0.038$ & $-0.145$ & $0.157$ & $1.038$ & $1.20$ & 46 \\
+PCR ($k{=}1$)        & $0.166$ & $+0.026$ & $-0.146$ & $-0.250$ & $\mathbf{0.211}$ & $\mathbf{0.851}$ & $1.90$ & 34 \\
+\bottomrule
+\end{tabular}
+\end{center}
+(Trades are the test-period round trips; the full-sample counts are in
+Table~\ref{tab:model_compare}.)
+
+\subsection{Findings}
+
+\begin{enumerate}[label=\textbf{M\arabic*.}]
+  \item \textbf{The Python OLS walk-forward reproduces the C++ baseline.} Full-sample net
+    Sharpe $\approx0.050$ matches the Phase~\ref{ch:phase4} engine to three decimals.
+    Two implementations, same experiment --- so every difference below is a model effect.
+  \item \textbf{Regularization improves \emph{net} performance by reducing turnover, not
+    by finding signal.} Ridge ($\alpha{=}10$) lifts the full-sample net Sharpe from
+    $0.050$ to $0.094$ while its \emph{gross} Sharpe is slightly \emph{lower} than OLS
+    ($0.341$ vs $0.391$). The mechanism is visible in the coefficient-instability column
+    ($0.998\to0.935$) and in Figure~\ref{fig:mc_stab}: the L2 shrinkage damps the
+    small-eigenvalue directions of $X^{\top}X$ \eqref{eq:ridge:spectral}, which are
+    exactly the directions in which the OLS hedge oscillates from window to window. A
+    smoother hedge means fewer position changes, less traded notional, less cost --- the
+    arithmetic of \eqref{eq:costdrag}. On the test period Ridge is also the
+    least-negative net Sharpe ($-0.031$ vs OLS $-0.302$).
+  \item \textbf{Aggressive sparsification hurts a hedging regression.} Lasso and
+    ElasticNet, driven to heavy penalties by the validation rule, degrade net performance
+    ($+0.007$ and $-0.032$ full sample). This is the empirical confirmation of the
+    inductive-bias argument of Section~\ref{sec:reg:comparison}: in a three-name
+    software basket every name carries shared factor exposure, so setting a weight to
+    exactly zero removes a hedge leg the spread needs. Note that the nonzero fraction is
+    $1.0$ for both --- at the selected $\alpha$ the penalty shrinks without fully
+    sparsifying, and the damage comes from the shrinkage being applied in the wrong
+    geometry (L1 treats each name independently) rather than from dropping names outright.
+  \item \textbf{PCA has the strongest raw signal and the weakest realized hedge.} The
+    one-component PCR residual gives the highest OOS IC ($0.211$ vs $0.125$ for OLS) and
+    the lowest coefficient instability ($0.851$), yet its full-sample net Sharpe ($0.026$)
+    is below OLS and its test-period net Sharpe ($-0.250$) is the worst but one. The
+    explanation is the eigenstructure argument of Section~\ref{sec:pca:derivation}: the
+    first principal component is the common sector/market mode, so projecting onto it
+    removes the market drift cleanly (hence a crisp, informative signal) but discards the
+    idiosyncratic relative moves that the mean-reversion trade actually monetises, and
+    under-hedges the names' common drift --- leaving the book exposed to a residual factor
+    it no longer measures. High IC, poor transfer coefficient
+    (Section~\ref{sec:nonlinear:fundamentallaw}).
+  \item \textbf{The predictive content is real but small, and the test period is adverse.}
+    Every estimator has a positive OOS IC on 2022--2026 ($0.125$--$0.211$), i.e.\ the
+    standardised spread genuinely predicts the \emph{direction} of convergence out of
+    sample. Yet every estimator is net-negative there, because 2022 was the worst regime
+    for this book (Phase~\ref{ch:phase7}: net Sharpe $-1.31$ in the 2022 selloff window):
+    rising rates and the growth-stock rotation broke the software/semis relationships the
+    baskets are built on, and 10\,bps per side turned a small edge into a loss.
+\end{enumerate}
+
+\subsection{Computational cost}
+
+Measured fit times on a $120\times3$ window in sklearn: $0.67$\,ms for OLS,
+$1.20$--$1.90$\,ms for the regularised variants --- a factor of $\approx2$--$3$, entirely
+immaterial to model choice at these sizes (the deciding factors are statistical). For
+scale comparison, the dependency-free C++ path performs the equivalent update-and-solve in
+$\approx0.6\,\mu$s (Table~\ref{tab:engine_latency}), i.e.\ $\approx1{,}000\times$ faster,
+which is what makes the $10^{5}$--$10^{6}$-backtest universe scan recommended by
+Chapter~\ref{ch:multipletesting} feasible at all.
+
+\subsection{Honest reading}
+
+The finding ``ridge beats OLS net of cost'' is directionally robust and mechanistically
+explained, and it is the first result in this project that is a genuine engineering
+conclusion rather than a market claim: \emph{shrink the hedge, trade less, pay less}.
+Its magnitude is not established: the DM test of Phase~\ref{ch:phase10} between the
+Ridge and OLS hedges gives a mean daily difference of $0.32$\,bps with a HAC standard
+error of $1.14$\,bps ($p=0.78$) --- economically meaningful, statistically invisible.
+And the ``best'' estimator depends on which window you look at: Ridge is best full-sample,
+PCR has the best IC, OLS-w60 is best on 2022+ (Phase~\ref{ch:phase8}). Selecting the
+winner after seeing all three is exactly the snooping that $M=44$ accounts for.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] all five linear variants run through a common pipeline;
+  \item[\checkmark] OOS metrics and stability time series plotted;
+  \item[\checkmark] hyper-parameter sweep saved and auditable;
+  \item[\checkmark] report section written from the generated tables, with the
+    honest reading above included rather than only the best row.
+\end{itemize}

@@ -1,0 +1,321 @@
+% =============================================================================
+%  CHAPTER 11 -- SYSTEMS: CACHES, LATENCY, AND INCREMENTAL LINEAR ALGEBRA
+% =============================================================================
+\section{Systems: caches, latency, and incremental linear algebra}
+\label{ch:systems}
+
+The statistical chapters decided \emph{what} to compute. This one decides how to compute
+it fast enough to be measurable, and --- more importantly --- how to \emph{prove} that the
+fast version computes the same thing as the slow one.
+
+\subsection{Why C++ at all}
+\label{sec:sys:why}
+
+The honest answer is not ``because HFT needs microseconds''. This is a daily-frequency
+strategy on 4{,}190 bars and four baskets; a Python implementation of the whole backtest
+runs in seconds. C++ is used here for three defensible reasons:
+\begin{enumerate}
+  \item \textbf{The specification asks for a low-latency execution core with per-stage
+    latency instrumentation}, which is a systems-engineering deliverable in its own right
+    and is what Phase~\ref{ch:phase3} and Phase~\ref{ch:phase11} build and measure.
+  \item \textbf{Breadth.} Chapter~\ref{ch:multipletesting} concludes that the way to make
+    a weak per-basket edge testable is to run hundreds of disjoint baskets. A universe
+    scan of 195 targets $\times$ candidate baskets $\times$ hyper-parameter grids is
+    $\sim10^{5}$--$10^{6}$ backtests; at $\approx1\,\mu$s per bar-stage in C++ versus
+    $\approx100\,\mu$s in interpreted Python, that is the difference between an afternoon
+    and a month.
+  \item \textbf{Determinism and testability.} The C++ engine can assert, per bar and at
+    zero runtime cost in release builds, that no allocation occurred, that the hedge used
+    information only through $t-1$, and that the incremental regression matches a
+    brute-force refit to $10^{-8}$. Those assertions are what make the statistical claims
+    trustworthy; they are much harder to bolt onto a research script.
+\end{enumerate}
+The Python layer keeps everything else: data wrangling, statistical tests (where
+\code{statsmodels}' implementations are better-tested than anything we would write),
+plotting, and report generation. The rule in \code{PLAN.md} --- ``C++ is the simulation
+core; Python is research and plotting'' --- is enforced by the fact that no strategy
+simulation logic exists in Python except the reference implementations used to
+cross-check the C++.
+
+\subsection{The memory hierarchy, in numbers}
+\label{sec:sys:memory}
+
+A modern x86 core sees memory as a pyramid. Representative figures for a server-class
+core (the sandbox has 2 vCPUs and 3.8\,GB RAM; absolute numbers vary, the ratios do not):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lrrr}
+\toprule
+Level & Size & Latency (cycles) & Latency (ns at 3\,GHz) \\
+\midrule
+Registers & $\sim$1\,KB & $\sim$1 & 0.3 \\
+L1 data cache & 32--48\,KB & 4--5 & $\sim$1.5 \\
+L2 cache & 512\,KB--2\,MB & 12--15 & $\sim$4 \\
+L3 cache (shared) & 8--64\,MB & 40--70 & $\sim$15--25 \\
+DRAM & GBs & 150--300 & $\sim$60--100 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The ratio that matters: an L1 hit is $\approx50\times$ cheaper than a DRAM access, and a
+single DRAM miss costs as much as $\approx40$ floating-point multiply-adds. Everything in
+data-oriented design follows from those two numbers.
+
+\paragraph{Cache lines and the 64-byte quantum.} The CPU does not fetch bytes, it fetches
+\emph{lines} of 64 bytes. Reading one \code{double} (8 bytes) from DRAM brings 64 bytes
+and costs $\approx80$\,ns; reading the next seven doubles from the same line costs
+$\approx1$\,ns each. The design objective is therefore not ``do fewer operations'' but
+``make every fetched byte useful''. Two mechanisms help: \emph{spatial locality}
+(consecutive accesses land in the same line) and the \emph{hardware prefetcher}, which
+detects constant-stride access patterns and issues DRAM requests ahead of the load, so a
+sequential loop over a contiguous array can approach full memory bandwidth
+($\approx$10--20\,GB/s per core) while a pointer-chasing loop achieves a few hundred
+MB/s.
+
+\subsection{Structure-of-Arrays versus Array-of-Structures}
+\label{sec:sys:soa}
+
+Two layouts for $N$ bars of (timestamp, price, volume):
+\begin{align}
+  \text{AoS:}\quad & \texttt{struct Bar \{ int64 ts; double px; double vol; \};}
+  && \texttt{std::vector<Bar> bars;} \label{eq:aos}\\
+  \text{SoA:}\quad & \texttt{std::vector<int64\_t> ts; std::vector<double> px, vol;}
+  && \text{(three contiguous columns)} \label{eq:soa}
+\end{align}
+Both store $24N$ bytes. The difference is what a \emph{loop that only needs prices}
+touches.
+
+\paragraph{AoS.} Consecutive prices are 24 bytes apart. Each 64-byte line contains
+$64/24 = 2.67$ useful doubles, so the loop loads $24/8 = 3\times$ the bytes it needs and
+issues $\lceil 24N/64\rceil$ line fetches. Effective useful bandwidth is $8/24=33\%$ of
+the achieved bandwidth.
+
+\paragraph{SoA.} Consecutive prices are 8 bytes apart; each line holds 8 useful doubles,
+the loop issues $\lceil 8N/64\rceil$ fetches --- $3\times$ fewer --- and useful bandwidth
+is 100\%. The loop is also trivially auto-vectorisable: with AVX2 (256-bit) four doubles
+per instruction, with AVX-512 eight. The compiler can vectorise a contiguous
+constant-stride-1 loop; it cannot vectorise a stride-3 gather without an explicit
+(expensive) \code{vgatherpd}.
+
+Quantitatively, for a reduction over $N$ elements the ideal speedup is bounded by
+$\min(3,\ \text{vector width})$ if the loop is memory-bandwidth-bound and by the vector
+width if it is compute-bound. \emph{Measured} (\code{bench/microbench.cpp},
+Table~\ref{tab:engine_bench}, Figure~\ref{fig:cache_bench}): the SoA column reduction is
+faster than AoS over $2^{20}$ elements, by a factor that has landed between $1.03\times$
+and $1.51\times$ across builds of the same binary on the same input --- the table above
+carries whichever value the last run produced. Even the favourable end is below the ideal
+$3\times$, and the reason is instructive: at $2^{20}$ doubles the working set is 8\,MB
+(SoA) versus 24\,MB (AoS), so the SoA version partly fits in L3 and the AoS version
+streams from DRAM --- but a simple summation is bandwidth-bound in both cases and the
+hardware prefetcher hides most of the AoS inefficiency. The architectural argument for
+SoA is not ``$3\times$ on this microbenchmark''; it is that SoA never wastes a fetched
+byte, keeps the working set $3\times$ smaller (which matters when the book spans hundreds
+of baskets), and admits SIMD --- benefits that grow with scale and with the number of
+distinct operations per element.
+
+\subsection{\code{std::vector} versus \code{std::deque}, and ring buffers}
+\label{sec:sys:vector}
+
+\code{std::deque} is typically implemented as a map of pointers to fixed-size blocks
+(often 512 bytes). It gives $O(1)$ push/pop at \emph{both} ends, which is exactly what a
+rolling window needs, but every element access is a double indirection (map lookup, then
+offset within block) and a block boundary breaks the stride pattern the prefetcher
+relies on.
+
+\code{std::vector} is one contiguous allocation: $O(1)$ random access with a single
+address computation, perfect prefetching, but $O(N)$ insertion/removal in the middle.
+
+For a fixed-capacity rolling window there is a third option that dominates both: a
+\emph{circular buffer} over a contiguous array. Maintain a head index $h$; element $i$ of
+the logical window lives at physical index $(h+i)\bmod W$; advancing the window is
+$h\leftarrow(h+1)\bmod W$, which is $O(1)$ with no data movement, no reallocation, and
+contiguous (if wrapped) memory. \code{src/data/market\_data\_buffer.h} and
+\code{src/model/rolling\_regression.h} use exactly this, with the feature rows in a flat
+row-major ring so that eviction knows precisely which row leaves --- a requirement of the
+rank-1 update \eqref{eq:rank1update}.
+
+\emph{Measured}: the rolling-window sweep over \code{std::vector} is faster than over
+\code{std::deque} at a 250-bar window, at a cost of a couple of hundred nanoseconds per
+operation for either container. The ratio has measured $1.084\times$, $1.264\times$ and
+$1.333\times$ in three consecutive builds; Table~\ref{tab:engine_bench} reports the live
+one. Modest and noisy, for the reason above: at 250 bars both fit comfortably in L1/L2, so
+the double indirection costs a few cycles rather than a cache miss, and the measurement is
+small enough that a neighbour process on this 2-core host moves it. The multiplier would
+grow with window size and with book width. Reporting the measured range rather than
+rounding it up to ``2--3$\times$ as theory suggests'' is the standard this report holds
+itself to.
+
+\subsection{Allocation on the hot path}
+\label{sec:sys:alloc}
+
+A \code{malloc}/\code{free} pair costs $\approx$20--100\,ns for a general-purpose
+allocator (glibc's \code{ptmalloc}: size-class lookup, free-list manipulation, and --- in
+multithreaded programs --- potential arena locking), plus:
+\begin{itemize}
+  \item \textbf{Unpredictability.} The cost distribution is heavy-tailed: an occasional
+    \code{brk}/\code{mmap} system call, or a free-list coalescing pass, costs microseconds.
+    For a latency-sensitive engine the \emph{p99}, not the mean, is the design target, and
+    allocations are the dominant source of p99 spikes.
+  \item \textbf{Fragmentation and locality.} Allocated blocks are scattered, defeating the
+    spatial locality that Section~\ref{sec:sys:soa} works to create.
+  \item \textbf{Cache pollution.} The allocator's own metadata competes for cache lines
+    with the market data.
+\end{itemize}
+
+The engine's rule is therefore: allocate everything in the constructor, allocate nothing
+in the per-bar path. \code{RollingRegression::update()} and \code{::compute()} write into
+pre-allocated scratch (the accumulated $X^{\top}X$, $X^{\top}y$, and the Cholesky factor)
+whose sizes are known from the constructor's $(W,n)$ arguments. \code{LatencyHist} stores
+counts in a fixed 64-element array rather than a \code{std::map}.
+
+\paragraph{How ``no allocation'' is verified, not asserted.} A global
+\code{operator new}/\code{operator delete} pair is overridden in
+\code{test/engine\_tests.cpp} with an atomic counter; the test installs a rolling
+regression, warms it, resets the counter to zero, and performs 1{,}000 windowed
+updates-and-solves, then asserts the counter is still zero. This is a genuine property
+test: it would fail if anyone later added a \code{std::vector} member that grew inside
+\code{update()}, or a \code{std::string} log line, or a temporary
+\code{std::function}. It is one of the 24 C++ tests (2{,}852 assertions) that
+\code{./build/statarbsim --test} runs.
+
+\subsection{Measuring latency honestly}
+\label{sec:sys:measurement}
+
+\paragraph{Instrument.} \code{std::chrono::high\_resolution\_clock} around each stage; on
+Linux this is \code{clock\_gettime(CLOCK\_MONOTONIC)}, whose read cost is $\approx$20--25
+\,ns via the vDSO (no syscall). That read cost is itself significant relative to the
+$\approx$21\,ns signal-generation stage being measured --- a fundamental limit: you
+cannot time a 20\,ns operation with a 20\,ns clock read without the measurement
+contributing. The reported per-stage numbers therefore include roughly one clock-read
+pair's overhead, which is why the two cheapest stages report nearly identical
+$\approx20.8$\,ns medians. This is disclosed rather than hidden.
+
+\paragraph{Report percentiles, not means.} \code{src/engine/latency\_hist.h} keeps a
+fixed 64-bucket histogram with \emph{logarithmically} spaced edges over
+$[10\,\text{ns},100\,\mu\text{s}]$: bucket $i$ covers
+$[lo\cdot(hi/lo)^{i/63},\ lo\cdot(hi/lo)^{(i+1)/63})$, so each bucket is a factor
+$(10^{4})^{1/63}=1.158$ wide ($\pm15.8\%$). Log spacing is the right choice for latency,
+which spans orders of magnitude and is right-skewed: linear buckets would put 30{,}000
+samples in one bucket and waste 63. The \code{quantile(q)} method walks the cumulative
+counts and returns the \emph{lower edge} of the bucket containing the $q$-th sample.
+
+\paragraph{An honest reading of the measured percentiles.}
+The percentiles in Table~\ref{tab:engine_latency} are \emph{bucket edges}, and reading them
+as if they were raw order statistics is the easiest mistake available here. For
+\code{regression\_update} the p50 edge is $599.5$\,ns; the ladder above it is
+$599.5\times1.158=694$\,ns, then $804$, $931$, $1078$, $1248$\,ns. Two regimes have been
+observed in different builds of the same code. When the distribution is tight, p50, p95 and
+p99 all report the \emph{same} edge ($599.5 / 599.5 / 599.5$\,ns) --- which is the
+resolution limit of the histogram, not a claim that the distribution is degenerate. When
+there is more tail, they step up the ladder ($599.5 / 1075.8 / 2234.6$\,ns in the build
+that produced the current table). In both regimes the mean, which is computed from the raw
+samples rather than from the histogram, lies above the p50 edge ($660$--$766$\,ns observed),
+confirming mass spread through and beyond it. With 30{,}000 samples the true p99 is
+somewhere between the reported edge and the next few edges, plus whatever right tail the
+host produced that minute; stating the bucket edge is the correct, non-overclaiming
+summary. A tighter histogram range (e.g.\ $[100\,\text{ns},10\,\mu\text{s}]$, edges still
+$1.16\times$ apart but centred on the action) would resolve the tail, and is listed as a
+small improvement in Chapter~\ref{ch:conclusion}.
+
+\paragraph{What else can invalidate a microbenchmark.} Frequency scaling (turbo),
+thermal throttling, other tenants on the host, page faults on first touch, branch-predictor
+and cache warm-up, and dead-code elimination by the optimiser (the classic: a benchmark
+whose result is unused gets compiled away). The engine's benchmark consumes every result
+into the histogram and prints it, so it cannot be elided; the microbenchmarks in
+\code{bench/microbench.cpp} accumulate into a volatile sink and run enough iterations
+($\ge10^6$) that warm-up is amortised. Numbers are reported from live runs of
+\code{build/microbench} and \code{build/statarbsim --demo}, captured by
+\code{scripts/analysis/capture\_engine\_bench.py} into
+\code{results/tables/engine\_bench.csv} and \code{engine\_latency.csv} --- never
+hand-typed, and re-measured on every report build.
+
+\subsection{Complexity accounting for the whole pipeline}
+\label{sec:sys:complexity}
+
+With $n$ features, window $W$, and $d=n+1$ states:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llll}
+\toprule
+Stage & Naive & This implementation & Measured p50 \\
+\midrule
+Rolling regression update & $O(Wn^2)$ refit & $O(n^2)$ rank-1 add/evict \eqref{eq:rank1update} & $\approx0.6\,\mu$s (incl.\ solve) \\
+Cholesky solve & $O(n^3/3)$ & same, but on the accumulated matrix & (same stage) \\
+Standardise + threshold & $O(1)$ & running sum/sumsq, $O(1)$ & $\approx21$\,ns (at the \code{chrono} floor) \\
+Order placement / book & $O(\text{positions})$ & flat array, $O(n)$ & $\approx21$\,ns (at the \code{chrono} floor) \\
+Kalman update (deferred port) & --- & $O(d^3)$ with $d\le5$ & $\lesssim250$ flops \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The regression stage dominates by $\approx29\times$ over the other two, and its cost is
+essentially the $d^3/3=21$ flops of the Cholesky plus the $2n^2=32$ flops of the rank-1
+updates plus the $O(d^2)$ bookkeeping --- i.e.\ $\sim$60--80 floating-point operations
+in $\approx600$\,ns, or roughly 8--10\,ns per flop. That is \emph{slow} per flop, and it
+tells you where the time actually goes: not in arithmetic but in the surrounding memory
+traffic and the timing instrumentation itself. The engineering conclusion is that further
+micro-optimisation of the regression math is pointless; the wins are in the data layout
+(so the whole book streams), in avoiding allocations (so p99 stays flat), and in not
+re-measuring with a 20\,ns clock read inside a 20\,ns stage.
+
+\subsection{Numerical accuracy: the $10^{-8}$ cross-check}
+\label{sec:sys:accuracy}
+
+Speed is worthless if the answer changes. The incremental accumulator of
+\eqref{eq:rank1update} adds and subtracts outer products for thousands of bars; in double
+precision each operation carries a relative error of $\approx10^{-16}$, and errors
+accumulate as $\sqrt{K}$ for $K$ random-signed operations but can grow linearly when
+terms nearly cancel --- which is exactly what happens when adding and subtracting nearly
+equal rank-1 matrices. The failure mode is a slowly drifting $X^{\top}X$ that eventually
+loses positive-definiteness, at which point Cholesky produces garbage or fails.
+
+The defence implemented in Phase~\ref{ch:phase4} is a property test, not a prayer:
+\begin{enumerate}
+  \item Compute the rolling hedge incrementally (the production path).
+  \item Recompute the same hedge by brute force: form $X$ from the raw window, compute
+    $X^{\top}X$ and $X^{\top}y$ from scratch, solve.
+  \item Assert $\max_j\lvert\hat\beta^{\text{incr}}_j-\hat\beta^{\text{brute}}_j\rvert
+    < 10^{-8}$ at every window position over the full real-data panel.
+\end{enumerate}
+The tolerance $10^{-8}$ is $10^{8}$ times machine epsilon: generous enough to allow
+legitimate accumulated rounding, tight enough that any algorithmic error (wrong row
+evicted, stale accumulator, incorrect scaling) fails immediately. A further practical
+safeguard, used widely in production systems and available here as a config switch, is
+periodic exact recomputation of the accumulator --- which bounds the drift regardless of
+arithmetic.
+
+\subsection{Design idioms used, and why}
+\label{sec:sys:idioms}
+
+\begin{itemize}
+  \item \textbf{Header-only templates.} Every engine class lives in a \code{.h} so that
+    the compiler sees the full definition at the call site and can inline the per-bar
+    path. A non-inlined function call costs $\approx$2--5\,ns --- 10--25\% of the
+    signal-generation stage --- and prevents the register allocation and vectorisation
+    that make the difference.
+  \item \textbf{No virtual functions on the hot path.} An indirect call through a vtable
+    cannot be inlined and mispredicts whenever the concrete type varies. Polymorphism is
+    confined to the outer research layer; per-bar units are concrete classes. Where
+    compile-time variation is needed, CRTP (\code{class Derived : public Base<Derived>})
+    gives static dispatch at zero cost.
+  \item \textbf{Value semantics and \code{noexcept}.} \code{reserve()} rather than
+    incremental \code{push\_back} growth; \code{noexcept} on the hot-path methods so the
+    compiler does not generate unwind tables for them; \code{[[nodiscard]]} on the
+    functions whose results must be consumed (also protecting the benchmarks from
+    dead-code elimination).
+  \item \textbf{A hand-rolled dense linear-algebra layer.} \code{src/model/dense\_la.h}
+    provides an SPD/ridge Cholesky solve and a cyclic-Jacobi symmetric eigen-solver
+    (Section~\ref{sec:pca:jacobi}) in a few hundred lines with no external dependency.
+    Eigen is not installable in this sandbox (no apt, no conda; only PyPI and GitHub are
+    reachable), and vendoring a 60{,}000-file library would have made the repository
+    unreviewable. The trade is documented: for $n\le5$ the hand-rolled code is
+    cache-friendly, vectorisable, unit-tested, and fast enough; for $n\sim10^3$ it would
+    be replaced by a blocked LAPACK call.
+  \item \textbf{Tests that assert properties, not values.} No-lookahead, zero-allocation,
+    incremental-equals-brute-force, ridge$\to$OLS as $\lambda\to0$, lasso sparsification,
+    $\mathrm{PCR}(k{=}n)=\mathrm{OLS}$, Cholesky reconstruction $LL^{\top}=A$, Jacobi
+    $V^{\top}AV=\Lambda$. These survive refactoring and they fail loudly when the
+    mathematics is broken --- which hardcoded expected numbers would not.
+\end{itemize}

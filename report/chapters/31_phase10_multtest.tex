@@ -1,0 +1,196 @@
+% =============================================================================
+%  CHAPTER 23 -- PHASE 10: MULTIPLE-TESTING CORRECTION AND DIEBOLD-MARIANO
+% =============================================================================
+\section{Phase 10 --- The adversarial audit: multiple testing and Diebold--Mariano}
+\label{ch:phase10}
+
+\textbf{Reproduce it:} \code{python3 scripts/analysis/compare\_multtest.py \&\& python3
+scripts/analysis/make\_book\_tables.py \&\& python3
+scripts/plotting/render\_multtest.py}.\\
+\textbf{Math used:} all of Chapter~\ref{ch:multipletesting}.\\
+\textbf{Artifacts:} \code{scripts/statkit/multtest.py},
+\code{results/tables/multtest\_\{audit,corrections,dm,pnl\}.csv},
+\code{results/tables/power\_dsr.csv},
+\code{results/figures/multtest\_\{sharpe,pvalues,forest\}.png},
+\code{report/tables/multtest*.tex}, \code{report/tables/power\_dsr.tex}.
+
+\subsection{Goal}
+
+Answer one question with a number: \emph{after correcting for everything we searched over,
+is the best net Sharpe distinguishable from zero?} This phase is the adversarial
+self-critique of the previous six, and its answer is the headline result of the project.
+
+\subsection{The hypothesis count, assembled honestly}
+
+The audit universe is the \emph{symmetric product} of the four baskets and the eleven
+hedge configurations that were actually traded and reported across Phases 4--9:
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+Baskets (4) & \code{ADBE}\{\code{CRM},\code{ADSK},\code{INTU}\}, \code{AVGO}\{\code{ADI},\code{INTC},\code{AAPL}\}, \code{GS}\{\code{BAC}\}, \code{CAT}\{\code{HON}\} \\
+Hedges (11) & OLS $W{=}60/120/180$; Ridge $W{=}120,\alpha{=}10$; Lasso $W{=}120$; ElasticNet $W{=}120$; \\
+            & PCR $W{=}120,k{=}2$; Kalman $q\in\{10^{-5},10^{-4},10^{-3},10^{-2}\}$ \\
+\midrule
+$M$ & $\mathbf{44}$ distinct daily net-return series \\
+\bottomrule
+\end{tabular}
+\end{center}
+Using the same symmetric grid for every basket is deliberate: it makes the data-snooping
+universe a clean product set, so $M$ is not an argument about which configurations
+``count''. All 44 are simulated on the identical causal pipeline at 10\,bps one-way and
+aligned on a \emph{common} daily calendar (2010-11-03 to 2026-09-01, $T=3{,}979$ bars),
+so the Reality Check and SPA operate on a genuine $(T,M)$ matrix rather than on ragged
+series. The aligned matrix is persisted as \code{results/tables/multtest\_pnl.csv}, which
+is what makes the power and deflated-Sharpe calculations of
+Section~\ref{sec:mt:power}--\ref{sec:mt:dsr} reproducible without re-simulating.
+
+\begin{remark}[Honesty: what is \emph{not} in $M$]
+$M=44$ counts traded strategy configurations. It does \emph{not} count: the four baskets
+themselves (chosen a priori by sub-industry, but still chosen); the $z$-bands $2.0/0.5$;
+the 10\,bps cost level; the 2010--2026 window; or the $16+16$ cells of the
+Phase~\ref{ch:phase7} sensitivity heatmaps, whose best cell was reported. A fully
+accounted audit would push $M$ into the hundreds, which would make the Bonferroni
+threshold correspondingly harsher and the conclusion stronger. $M=44$ is therefore a
+\emph{lower bound} on the search breadth, and the verdict below is conservative in the
+direction that matters --- it under-corrects and still finds nothing.
+\end{remark}
+
+\subsection{Results: the corrections}
+
+\input{tables/multtest.tex}
+
+\input{tables/power_dsr.tex}
+
+\input{tables/multtest_hac.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/multtest_sharpe.png}
+\caption{The 44 audited strategies' full-sample net Sharpe ratios, ranked, against the
+Bonferroni-implied significance bar. Only two are above $0.3$; none is statistically
+distinguishable from zero.}
+\label{fig:multtest_sharpe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/multtest_pvalues.png}
+\caption{One-sided HAC $p$-values for $H_0$: mean daily net P\&L $\le0$, against the
+uncorrected $0.05$ line and the Bonferroni bar $0.05/44=0.00114$. The best $p$ in the
+entire set is $0.0587$ --- it does not even reach the \emph{uncorrected} line.}
+\label{fig:multtest_pvalues}
+\end{figure}
+
+The complete numeric answer:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{p{0.42\linewidth}p{0.16\linewidth}p{0.34\linewidth}}
+\toprule
+Question & Answer & Source \\
+\midrule
+How many hypotheses were searched? & $M=44$ & \code{multtest\_corrections.csv} \\
+Best strategy in the set? & \code{GS::OLS-w180}, net Sharpe $0.346$ & same \\
+Its raw one-sided HAC $p$? & $0.0587$ & same \\
+Bonferroni threshold $\alpha/M$? & $0.001136$ & same \\
+Bonferroni-adjusted $p$? & $1.000$ & same \\
+How many survive Bonferroni? & $\mathbf{0}$ & same \\
+White Reality Check $p$? & $\mathbf{0.868}$ & 1{,}200 stationary-bootstrap draws \\
+Hansen SPA $p$? & $\mathbf{0.638}$ & same \\
+Expected best $t$ under $M_{\text{eff}}=10.7$ independent nulls? & $2.18$ & \code{power\_dsr.csv} \\
+Observed best $t$? & $1.566$ & same \\
+Expected best Sharpe under the null (BLP $\mathrm{SR}_0$)? & $0.474$ & same \\
+Deflated Sharpe Ratio? & $\mathbf{0.305}$ & same \\
+Bootstrap 95\% CI on the best Sharpe? & $[-0.058,\ +0.753]$ & same \\
+Years of daily data needed for the best-of-44, uncorrected? & $22.6$ & same \\
+\dots\ after Bonferroni over 44? & $77.8$ & same \\
+\dots\ for the best \code{ADBE} variant ($\mathrm{SR}=0.086$)? & $366$ / $1{,}259$ & same \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Results: pairwise Diebold--Mariano}
+
+\input{tables/multtest_dm.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/multtest_forest.png}
+\caption{Diebold--Mariano forest on \code{ADBE}: mean daily net-P\&L difference of the
+best within-basket hedge (Kalman $q=10^{-5}$) minus each alternative, with Newey--West
+HAC 95\% confidence intervals. Every interval spans zero.}
+\label{fig:multtest_forest}
+\end{figure}
+
+The reference is the best \code{ADBE} hedge (Kalman $q=10^{-5}$). Mean daily differences
+range from $+0.03$ to $+0.86$\,bps with HAC standard errors of $0.088$--$1.163$\,bps,
+giving DM statistics between $0.04$ and $1.23$ and $p$-values between $0.220$ and $0.965$.
+Every 95\% interval spans zero.
+
+The economically largest and statistically weakest pair is the one that matters most:
+Kalman $q{=}10^{-5}$ versus Kalman $q{=}10^{-3}$ differs by $0.864$\,bps/day
+($\approx2.2\%$/year on \$1 gross) with a standard error of $0.705$\,bps, $\mathrm{DM}=1.23$,
+$p=0.22$. A $2\%$/year improvement in a market-neutral book is a real edge; sixteen years
+of one daily basket cannot demonstrate it. The same is true of the smooth-versus-churny
+comparison that Phases 5 and 8 emphasised: the direction is consistent and mechanistically
+explained, and it is inside the noise.
+
+\subsection{Interpretation}
+
+\begin{enumerate}[label=\textbf{A\arabic*.}]
+  \item \textbf{The answer to the phase's question is ``no''.} Not ``probably not'' --- no.
+    The best raw $p$ in a 44-strategy search is $0.059$, which fails even the uncorrected
+    5\% test. There is no version of the multiple-testing methodology under which this set
+    yields a discovery, because there is no single-strategy discovery to correct.
+  \item \textbf{The bootstrap tests agree with the per-strategy tests, and that agreement
+    is informative.} White's RC ($p=0.868$) and Hansen's SPA ($p=0.638$) are much less
+    conservative than Bonferroni and account for the cross-strategy dependence explicitly;
+    they still find nothing. When a conservative test and two powerful tests agree, the
+    conclusion is robust to methodology.
+  \item \textbf{The deflated Sharpe ratio adds the selection effect.}
+    $\mathrm{SR}_0=0.474$ is what you would expect the best of 44 trials to look like if
+    all 44 were noise, given the observed cross-trial dispersion of Sharpers. Our best is
+    $0.346$ --- below the null benchmark --- giving $\mathrm{DSR}=0.305$ against a $>0.95$
+    bar. The fat tails (excess kurtosis $13.4$) make this worse, not better.
+  \item \textbf{The power calculation is the deepest result.} Even taking the best observed
+    Sharpe at face value and asking only ``how long until we could confirm it?'', the
+    answer is $22.6$ years uncorrected and $77.8$ years corrected --- versus the 15.8 years
+    we have. For the \code{ADBE} basket the answers are $366$ and $1{,}259$ years. This
+    means the negative verdict is not a verdict on this strategy so much as on the
+    \emph{experimental design}: single-basket daily-frequency relative value is
+    unfalsifiable at any sample size that exists. The design must change
+    (Chapter~\ref{ch:conclusion}): more breadth, higher frequency, or lower cost.
+  \item \textbf{What the audit does \emph{not} say.} It does not say the spread is not
+    stationary (Phase~\ref{ch:phase6}: ADF $p<10^{-3}$, half-life $9.4$ bars --- those are
+    properties of a series, not of a searched maximum, and they are unaffected by
+    multiplicity). It does not say the hedge is not cointegrated (Johansen rank 2, HAC
+    $t=7.3$ and $9.4$ on two of three weights). It does not say the signal has no
+    directional content (OOS IC $0.125$--$0.211$ on a \emph{pre-specified} test period,
+    positive for every estimator). It says: \emph{the traded, net-of-cost Sharpe of the
+    best configuration found in this search is not distinguishable from zero, and could not
+    be distinguished from zero with any amount of data at this effect size.}
+\end{enumerate}
+
+\subsection{The honesty gate}
+
+\code{environment/check.sh} contains a check that \emph{fails the build} unless
+\code{n\_survive\_bonferroni == 0} \emph{and} \code{white\_rc\_p >= 0.05} \emph{and}
+\code{hansen\_spa\_p >= 0.05}. This is unusual and deliberate: the project's central
+empirical finding is encoded as a regression test, so that a future edit which quietly
+produces a ``significant'' result cannot pass the exit gate without an explicit, visible
+change to the gate itself. Current status: passes (0 survivors, $p_{\text{RC}}=0.868$,
+$p_{\text{SPA}}=0.638$).
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] explicit numeric answer to ``is the best Sharpe still distinguishable
+    from zero after correction?'' --- \textbf{no}, on four independent grounds;
+  \item[\checkmark] full hypothesis-count audit with the count justified and its
+    incompleteness disclosed;
+  \item[\checkmark] Bonferroni, White Reality Check and Hansen SPA computed on an aligned
+    $(T,M)$ matrix with a seeded stationary bootstrap;
+  \item[\checkmark] Diebold--Mariano results table and forest plot with HAC standard
+    errors;
+  \item[\checkmark] power analysis and deflated Sharpe ratio added, so the negative result
+    is quantified rather than merely asserted;
+  \item[\checkmark] the conclusion encoded as a build-time honesty gate.
+\end{itemize}

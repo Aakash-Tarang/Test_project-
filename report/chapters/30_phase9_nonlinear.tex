@@ -1,0 +1,219 @@
+% =============================================================================
+%  CHAPTER 22 -- PHASE 9: NONLINEAR EXTENSION + RESET
+% =============================================================================
+\section{Phase 9 --- Nonlinear signal extraction and the RESET test}
+\label{ch:phase9}
+
+\textbf{Reproduce it:} \code{python3 scripts/test\_nonlinear.py}, then \code{python3
+scripts/analysis/compare\_nonlinear.py \&\& python3
+scripts/plotting/render\_nonlinear.py}.\\
+\textbf{Math used:} all of Chapter~\ref{ch:nonlinear}.\\
+\textbf{Artifacts:} \code{scripts/model/nonlinear\_models.py},
+\code{scripts/test\_nonlinear.py},
+\code{results/tables/nonlinear\_\{summary,reset,learning,trading\}.csv},
+\code{results/figures/nonlinear\_\{ic,reset,sharpe,learning\}.png},
+\code{report/tables/nonlinear.tex}.
+
+\subsection{Goal}
+
+Answer one question honestly: \emph{does nonlinear signal extraction add value over the
+regularized linear map, once costs are paid?} Phases 4--8 traded a single standardized
+deviation through a linear threshold policy and found a small, cost-dominated edge. If the
+relationship between the spread's level and its subsequent reversion is nonlinear, a
+flexible model should recover value the linear rule leaves on the table. This phase tests
+that, and reports the negative.
+
+\subsection{The forecasting task}
+
+The target is the realized $h$-bar ($h=5$) market-neutral return of fading a rich causal
+rolling-OLS-120 spread:
+\begin{equation}
+  R_t^{h} \;=\; -\,\frac{S_{t+h}-S_t}{g_t},
+  \qquad
+  S_t = \log P^{T}_t - \hat\alpha_t - \sum_j \hat\beta_{j,t}\log P^{j}_t,
+  \qquad
+  g_t = 1+\sum_j\lvert\hat\beta_{j,t}\rvert ,
+  \label{eq:nonlin_target}
+\end{equation}
+with $S_t$ the causal (one-bar-delayed) spread and $g_t$ the grossing factor
+\eqref{eq:grossing} that converts a spread change into a return on \$1 gross. Predicting
+$R_t^h>0$ means ``the rich spread will revert'', which is exactly the trade the threshold
+book takes --- so the forecasting task and the trading task are the same task, and the
+comparison is meaningful.
+
+\paragraph{Features (11, all causal).} Current $z$; spread level; spread changes over 1
+and 5 bars; 5-bar and 20-bar rolling volatility of the spread; target return and its first
+two lags; basket return and its first two lags. Every feature uses bars $\le t$ only. The
+set is deliberately small and low-capacity: with daily data and a weak signal,
+high-dimensional inputs inflate variance without revealing structure
+(Section~\ref{sec:nonlinear:trees}) --- a design decision made from
+Chapter~\ref{ch:nonlinear}'s theory rather than from experimentation on the test set.
+
+\paragraph{Estimators.} \code{linear}: Ridge on standardized features (the
+Chapter~\ref{ch:regularization} baseline). \code{gbm}:
+\code{HistGradientBoostingRegressor}. \code{mlp}: shallow \code{MLPRegressor} (run on
+\code{ADBE} only, for compute reasons --- itself a finding: the nonlinear path is
+$\approx100\times$ more expensive per fit). A \code{persistence} reference (the IC of
+$z_t$ itself) is computed alongside, so ``how much does the model add beyond simply
+trading the current mispricing?'' is directly measurable.
+
+\paragraph{No-lookahead discipline.} Forecasters are fit on a causal \emph{expanding}
+window: at each quarterly (63-bar) boundary the estimator is retrained on every valid
+training bar from warm-up onward, then predicts only the strictly subsequent held-out
+bars. Feature standardisation uses training-window mean and standard deviation applied to
+the held-out bars --- the classic leakage point, explicitly avoided. Reported metrics are
+out-of-sample on 2022+ ($n\approx1{,}164$--$1{,}165$ per basket).
+
+\subsection{Results: forecast quality}
+
+\input{tables/nonlinear.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/nonlinear_ic.png}
+\caption{Out-of-sample information coefficient by basket and estimator (2022+). The linear
+Ridge is highest on every basket; the GBM is second on every basket; the MLP is between
+them and still below linear.}
+\label{fig:nonlinear_ic}
+\end{figure}
+
+Measured (Table~\ref{tab:nonlinear_forecast}):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llrrr}
+\toprule
+Basket & Model & OOS IC & OOS $R^2$ & $n$ \\
+\midrule
+\code{ADBE} & linear & $\mathbf{0.341}$ & $\mathbf{+0.088}$ & 1{,}164 \\
+\code{ADBE} & gbm & $0.255$ & $-0.051$ & 1{,}164 \\
+\code{ADBE} & mlp & $0.267$ & $-0.049$ & 1{,}164 \\
+\code{AVGO} & linear & $\mathbf{0.423}$ & $\mathbf{+0.173}$ & 1{,}165 \\
+\code{AVGO} & gbm & $0.366$ & $+0.119$ & 1{,}165 \\
+\code{GS}   & linear & $\mathbf{0.300}$ & $\mathbf{+0.078}$ & 1{,}164 \\
+\code{GS}   & gbm & $0.217$ & $-0.052$ & 1{,}164 \\
+\code{CAT}  & linear & $\mathbf{0.243}$ & $\mathbf{+0.041}$ & 1{,}164 \\
+\code{CAT}  & gbm & $0.173$ & $-0.058$ & 1{,}164 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Results: is the linear equation misspecified?}
+
+\input{tables/nonlinear_reset.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.85\linewidth]{figures/nonlinear_reset.png}
+\caption{Ramsey RESET $F$-test on the linear forecasting equation, fitted on the training
+sample only. Three of four baskets reject linearity at 5\%; the \code{ADBE} basket used
+throughout Phases 4--8 does not.}
+\label{fig:nonlinear_reset}
+\end{figure}
+
+Measured (Table~\ref{tab:nonlinear_reset}, $n_{\text{train}}=2{,}881$ per basket):
+\code{ADBE} $p=0.376$ (no rejection), \code{AVGO} $p<10^{-3}$, \code{GS} $p=0.0023$,
+\code{CAT} $p<10^{-3}$ (all reject).
+
+\subsection{Results: the learning curve, i.e.\ \emph{why}}
+
+\input{tables/nonlinear_learn.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.85\linewidth]{figures/nonlinear_learning.png}
+\caption{GBM learning curve: out-of-sample $R^2$ on a fixed 2019--2020 validation window
+as the causal training sample grows. The ensemble is deep inside its variance-dominated
+regime until $\approx2{,}400$--$2{,}800$ training bars --- which is about as much data as
+this universe provides.}
+\label{fig:nonlinear_learning}
+\end{figure}
+
+Measured (Table~\ref{tab:nonlinear_learning}): OOS $R^2$ runs $-0.446$ at 400 training
+bars, $-0.304$ at 800, $-0.228$ at 1{,}200, $-0.170$ at 1{,}600, $-0.132$ at 2{,}000,
+$-0.031$ at 2{,}400, and only at 2{,}800 bars does it turn positive ($+0.432$ on that
+particular window). With $\approx2{,}881$ training bars available in total, the flexible
+model reaches competence at the very end of the available data and never gets to
+demonstrate superiority. This is the textbook small-signal, low-$N$ regime of
+Section~\ref{sec:nonlinear:trees}: boosting's bias is near zero and all its error is
+variance, and variance needs data.
+
+\subsection{Results: does any of it survive contact with costs?}
+
+Forecast IC is a statistical summary; what matters is the traded result. So the
+Phase~\ref{ch:phase4} $z$-threshold book on the \code{ADBE} basket is given an entry
+\emph{gate}: a position opens only when the threshold condition holds \emph{and} the
+forecaster's predicted $R_t^h$ points in the same reversion direction.
+
+Table~\ref{tab:nonlinear_trade} (generated from
+\code{results/tables/nonlinear\_trading.csv}) gives the full comparison; the headline
+rows are: baseline $z$-threshold book $+0.050$ net Sharpe over 198 trades (full sample);
+linear gate $+0.037$ over 98 trades; GBM gate $+0.003$ over 95; MLP gate $-0.018$ over 92.
+On the 2022+ test period the baseline is $-0.302$ over 48 trades and \emph{every} gated
+variant is $-0.346$ over 23 trades.
+
+The verdict is negative and unambiguous: \textbf{gating never raises net Sharpe}, on
+either the full sample or the test period. The linear gate approximately halves the number
+of trades (198$\to$98) without improving net Sharpe ($0.050\to0.037$); the GBM and MLP
+gates, whose marginal predictions are less accurate, degrade it further ($0.003$ and
+$-0.018$). Filtering entries by a nonlinear reversion forecast therefore does not recover
+the value the statistical tests hint at --- once transaction costs are paid.
+
+\paragraph{Why halving the trades did not help.} \eqref{eq:costdrag} says the drag is
+$c\cdot\mathrm{TO}$, so halving trades should halve the drag and add $\approx1.3\%$/year.
+It did not, because the gate removes trades \emph{proportionally}: the filtered-out trades
+were, on average, as profitable as the kept ones. That is the operational meaning of
+``IC $=0.25$ but no incremental value over $z_t$ itself'' --- the nonlinear forecast is
+correlated with the current mispricing (which is the first feature it is given!) and adds
+almost no independent ranking information. The persistence reference in
+\code{nonlinear\_summary} quantifies exactly this.
+
+\subsection{Findings}
+
+\begin{enumerate}[label=\textbf{N\arabic*.}]
+  \item \textbf{Linear wins the forecasting race on every basket.} Highest OOS IC
+    ($0.243$--$0.423$) and the only clearly positive OOS $R^2$ ($+0.041$ to $+0.173$). The
+    GBM is second everywhere; the MLP is comparable to the GBM and below linear. Whatever
+    functional nonlinearity these models can capture in-sample does not generalise at
+    daily frequency on $\approx3{,}000$ bars.
+  \item \textbf{The linear equation is not strongly misspecified where it matters.} RESET
+    rejects linearity on three of four baskets but not on \code{ADBE} ($p=0.376$) --- the
+    basket used throughout Phases 4--8. And where linearity \emph{is} rejected (AVGO, GS,
+    CAT), the flexible models still fail to convert the misspecification into OOS $R^2$
+    (GS: linear $+0.078$ vs GBM $-0.052$). Detecting nonlinearity and exploiting it are
+    different problems; the second needs far more data than the first.
+  \item \textbf{The learning curve explains the result without reference to the market.}
+    The GBM's OOS $R^2$ is negative until $\approx2{,}400$--$2{,}800$ training bars, which
+    is essentially the whole dataset. The failure is a sample-size failure, not evidence
+    that markets are linear.
+  \item \textbf{Nothing survives costs.} No gate improves net Sharpe on any scope, and the
+    honest gate in \code{environment/check.sh} \emph{fails the build} if a future edit ever
+    lets one: the check reads \code{nonlinear\_trading.csv} and asserts that the
+    linear-gate net Sharpe does not exceed the baseline's.
+\end{enumerate}
+
+\subsection{Honest conclusion, and what would change it}
+
+\textbf{Conclusion.} At daily frequency, on $\approx3{,}000$--$4{,}000$ observations per
+basket, with a signal-to-noise ratio of a few percent, a regularized linear map dominates
+gradient boosting and a shallow network both as a forecaster and as a trading gate. The
+result is predicted in advance by the bias--variance decomposition
+\eqref{eq:biasvariance}--\eqref{eq:mse:decomp} and confirmed by the learning curve; it is
+not a surprise and it is not a comment on nonlinear models in general.
+
+\textbf{What would change it} (Section~\ref{sec:nonlinear:when}): pooling all 195 names'
+baskets into one supervised problem with basket fixed effects --- raising the effective
+sample by two orders of magnitude while keeping per-basket economics; higher-frequency data
+where SNR is better and $T$ per year is 250$\times$ larger; classification targets with
+genuine asymmetry (``will this relationship break?'') rather than a regression on a weak
+continuous return; and features with real nonlinear structure (liquidity, borrow cost,
+option-implied skew). The first is the cheapest and is listed first in
+Chapter~\ref{ch:conclusion}.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] nonlinear versus linear OOS $R^2$, IC and net Sharpe compared with an
+    honest conclusion;
+  \item[\checkmark] learning curves and RESET plotted from generated CSVs;
+  \item[\checkmark] pipeline unit tests pass (\code{scripts/test\_nonlinear.py});
+  \item[\checkmark] the build \emph{fails} if the nonlinear gate ever outclaims the
+    baseline net Sharpe (honesty gate in \code{check.sh}).
+\end{itemize}

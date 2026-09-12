@@ -1,0 +1,180 @@
+% =============================================================================
+%  FRONT MATTER: abstract, how to read this book, notation, provenance rules
+% =============================================================================
+
+\section*{Abstract}
+\label{sec:abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+This document is a self-contained, book-length account of a multi-asset statistical
+arbitrage project. It is written for a reader who starts from nothing: Part~I develops
+every piece of mathematics the project uses --- probability, returns, stationarity,
+least squares, regularization, unit-root and cointegration tests, the
+Ornstein--Uhlenbeck process, the Kalman filter, nonlinear forecasting, the arithmetic
+of backtesting, data-snooping corrections, and the cache/latency arithmetic of a
+low-latency C++ engine --- from definitions and first principles, with derivations
+rather than citations. Part~II then walks, phase by phase, through what was actually
+built and measured in this repository, tying every number in the text to a script that
+regenerates it. Part~III synthesises the findings.
+
+The empirical headline is deliberately unglamorous and, we argue, honest. On a real
+195-name, 2010--2026 total-return panel of U.S.\ large-cap equities, a causal
+walk-forward basket spread does revert: the traded (rolling-hedge) spread rejects a
+unit root decisively (ADF $p<10^{-3}$) with an Ornstein--Uhlenbeck half-life of
+$\approx 9.4$ trading days, while a static sixteen-year hedge does not
+($p\approx0.08$, half-life $\sim 170$--$178$ days). The out-of-sample information
+coefficient of the standardized spread against the realized 21-bar reversion return is
+positive for every estimator tested ($\approx 0.12$--$0.21$). Ridge shrinkage and,
+better, a low-noise Kalman hedge raise the full-sample net Sharpe from
+$\approx 0.05$ (rolling OLS) to $\approx 0.09$--$0.11$ at 10\,bps one-way cost, mostly
+by cutting turnover rather than by finding more signal. Flexible nonlinear models
+(gradient boosting, a shallow network) never beat the regularized linear map
+out-of-sample, and a Ramsey RESET test does not reject linearity on the main basket
+($p\approx0.38$).
+
+But: after transaction costs the daily edge is small relative to its own noise, the
+four-strategy book is net-negative over the full sample (net Sharpe
+$\approx -0.40$ to $-0.46$), and --- decisively --- \emph{no} variant's net Sharpe
+survives a fair correction for the breadth of the search
+($M=44$ audited strategies; Bonferroni survivors $=0$; White Reality Check and
+Hansen's SPA both non-significant; every pairwise Diebold--Mariano confidence interval
+spans zero). The correct conclusion is that the \emph{structure} is real and
+reproducible (mean reversion of an adaptively estimated spread, smooth low-turnover
+hedges beating churny refits, linear beating nonlinear net of cost) while the
+\emph{magnitude} is not distinguishable from a data-snooping artifact at this sample
+size, this frequency, and this cost level. Everything needed to check that claim ---
+data pipeline, statistical toolkit with 35 unit tests, a dependency-free C++ engine
+with 24 unit tests and 2{,}852 assertions, and the report generator --- is in this
+repository and regenerates end to end.
+
+\vspace{1.5em}
+
+\section*{How to read this book}
+\label{sec:howtoread}
+\addcontentsline{toc}{section}{How to read this book}
+
+The book has three parts with different jobs.
+
+\begin{description}[leftmargin=0pt,style=nextline]
+  \item[Part I --- The Mathematics, From Nothing.] Eleven chapters of theory. Nothing
+    is assumed beyond high-school algebra and the idea that a probability is a number
+    between 0 and 1. Every estimator used later is \emph{derived}: where the formula
+    comes from, what assumptions make it valid, and exactly how those assumptions fail
+    on financial data. Read it linearly the first time; use it as a reference after
+    that. Chapters are ordered so that each only depends on earlier ones:
+    \begin{center}
+      \begin{tabular}{ll}
+        \toprule
+        Ch. & Builds on \\
+        \midrule
+        1 What statistical arbitrage is & --- \\
+        2 Probability, returns, stationarity & 1 \\
+        3 Linear regression from scratch & 2 \\
+        4 Regularization (ridge / lasso / elastic net / PCR) & 3 \\
+        5 Time-series econometrics (unit roots, cointegration, HAC) & 2, 3 \\
+        6 Mean reversion and the Ornstein--Uhlenbeck process & 2, 5 \\
+        7 State-space models and the Kalman filter & 2, 3, 6 \\
+        8 Nonlinear models, overfitting, and the RESET test & 3, 4 \\
+        9 The mathematics of backtesting (costs, Sharpe, drawdown, bootstrap) & 2, 6 \\
+        10 Multiple testing and data snooping & 9 \\
+        11 Systems: caches, latency, and incremental linear algebra & 3 \\
+        \bottomrule
+      \end{tabular}
+    \end{center}
+  \item[Part II --- The Project, Phase by Phase.] Fourteen chapters: a phase map, then
+    one chapter per phase (``Part'') of the build plan in \code{PLAN.md} (Phases 12 and 13,
+    both assembly and review, share the last one). Each chapter has the same shape:
+    \emph{goal} $\rightarrow$ \emph{what was built} (with the files that implement it)
+    $\rightarrow$ \emph{the math it uses} (pointing back to Part~I) $\rightarrow$
+    \emph{results} (tables and figures regenerated by code) $\rightarrow$
+    \emph{honest reading} $\rightarrow$ \emph{exit gate}. If you want to know ``what did
+    you actually do, and in what order?'', this is the part.
+  \item[Part III --- Synthesis.] The combined verdict, what this project does
+    \emph{not} claim (non-goals), and the concrete next steps that would be needed to
+    turn a real-in-structure, too-small-in-magnitude edge into something tradeable.
+  \item[Appendices.] Four reference sections: twelve extended derivations that would
+    interrupt the flow of Part~I (Appendix~\ref{ch:derivations}); the validation suite and
+    all 35 unit tests of the statistical toolkit (Appendix~\ref{ch:statkitappendix}); a
+    reproducibility manual with the exact commands, their expected console output, and the
+    map from every table in this book to the script that produces it
+    (Appendix~\ref{ch:reproducibility}); and a symbol index, glossary, list of figures and
+    list of tables (Appendix~\ref{ch:glossary}).
+\end{description}
+
+\paragraph{Boxes.} Three kinds of aside appear throughout.
+\emph{Intuition} boxes give the plain-English picture before or after the algebra.
+\emph{Derivation} material is inline and marked by equation numbers.
+\emph{Honesty} remarks flag places where a shortcut, an assumption, or a negative
+result is being reported rather than hidden --- they are the most important paragraphs
+in the book.
+
+\paragraph{Two formats, one source.} The canonical source is
+\code{report/report.tex}, which \code{\textbackslash input}s the 29 chapter files in
+\code{report/chapters/} and compiles to a paginated PDF with \code{latexmk -pdf} wherever
+a \TeX\ distribution exists. In this sandbox none is installable, so
+\code{python3 report/build\_report.py} also renders the same source to
+\code{report/report.html}: a linked, navigable book whose mathematics is rasterised locally
+with matplotlib's \code{mathtext} (no CDN, no MathJax, no network). The renderer is
+\code{report/latex\_to\_html.py}, described in Section~\ref{sec:phase13:renderer}; it is
+a preview, not a \TeX\ implementation, and the differences are cosmetic (floats are placed
+where they are written, page breaking is ignored). If you read only one format, read the
+HTML here and the PDF anywhere else --- the numbers are identical because both come from the
+same generated tables.
+
+\paragraph{Provenance rule.} No number appears in this book unless it was produced by
+code checked into this repository. Figures and tables are generated into
+\code{results/} and \code{report/tables/} by the scripts named in each chapter's
+``reproduce it'' line, and the whole report is rebuilt with
+\code{python3 report/build_report.py}. Where a number in the prose is quoted for
+readability, the generating table is \code{\textbackslash input}-ed on the same page so
+you can check it.
+
+\vspace{1em}
+
+\section*{Notation}
+\label{sec:notation}
+\addcontentsline{toc}{section}{Notation}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lp{0.72\linewidth}}
+\toprule
+Symbol & Meaning \\
+\midrule
+$T$ & number of time observations (bars) in a sample \\
+$N,\ n$ & number of assets / number of regressors (features) \\
+$t$ & time index, $t=1,\dots,T$; bars are daily unless stated \\
+$P_{i,t}$ & price of asset $i$ at $t$; $P^{T}$ is the \emph{target}, $P^{j}$ a basket name \\
+$p_{i,t}$ & log price, $\log P_{i,t}$ \\
+$r_{i,t}$ & simple return, $P_{i,t}/P_{i,t-1}-1$ \\
+$y_t,\ x_t$ & regression target and regressor row vector at time $t$ \\
+$Y,\ X$ & stacked sample: $Y\in\R^{T}$, $X\in\R^{T\times n}$ \\
+$\beta$ & vector of hedge weights (regression coefficients) \\
+$\hat\beta_t$ & estimate of $\beta$ using information through bar $t$ only \\
+$\eps_t,\ \hat\eps_t$ & model error and estimated residual \\
+$S_t$ & spread: $S_t = y_t - \hat\alpha_t - x_t^{\top}\hat\beta_t$ \\
+$\mu_S,\ \sigma_S$ & mean and standard deviation of the spread over the estimation window \\
+$z_t$ & standardized spread, $z_t=(S_t-\mu_S)/\sigma_S$ \\
+$\lambda,\ \alpha$ & regularization penalty strength (context makes clear which) \\
+$\theta,\ \mu,\ \sigma$ & OU mean-reversion speed, long-run mean, diffusion \\
+$\tau_{1/2}$ & mean-reversion half-life, $\ln 2/\theta$ \\
+$Q,\ R$ & Kalman state-noise and observation-noise covariances \\
+$\beta_{t\mid t}$ & Kalman posterior (filtered) state at $t$; $\beta_{t\mid t-1}$ the prediction \\
+$w_i$ & portfolio weight on strategy or name $i$ \\
+$c$ & one-way transaction cost, in basis points of traded notional \\
+$g$ & grossing factor, $g = 1 + \sum_i \lvert \beta_i\rvert$ \\
+$\mathrm{IC}$ & information coefficient: correlation of a signal with a realized forward return \\
+$\hat\Omega$ & long-run (HAC) covariance matrix of a moment condition \\
+$M$ & number of hypotheses/strategies searched (the data-snooping count) \\
+$\E[\cdot],\ \Var(\cdot),\ \Cov(\cdot)$ & expectation, variance, covariance \\
+$\xrightarrow{\ d\ }$ & convergence in distribution \\
+$\mathcal{N}(m,\Sigma)$ & Gaussian with mean $m$ and covariance $\Sigma$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Time indices matter more than any other notational choice in this book. A quantity
+with a subscript $t$ that is used to make a decision at $t$ must be computable from
+data up to and including $t$ --- and, because we execute on the \emph{next} bar, the
+hedge that scores bar $t$ is estimated through bar $t-1$. We write this explicitly
+wherever it matters, and one of the C++ unit tests exists solely to assert it.

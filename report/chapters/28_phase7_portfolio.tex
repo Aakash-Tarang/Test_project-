@@ -1,0 +1,250 @@
+% =============================================================================
+%  CHAPTER 20 -- PHASE 7: PORTFOLIO CONSTRUCTION AND RISK CONTROLS
+% =============================================================================
+\section{Phase 7 --- Portfolio-level construction and risk controls}
+\label{ch:phase7}
+
+\textbf{Reproduce it:} \code{python3 scripts/analysis/capture\_portfolio.py \&\& python3
+scripts/plotting/render\_portfolio.py}.\\
+\textbf{Math used:} Sections~\ref{sec:bt:risk} (VaR/CVaR, coherence) and
+\ref{sec:bt:sizing} (inverse-vol, water-fill), \ref{sec:bt:regimes} (regime
+conditioning).\\
+\textbf{Artifacts:} \code{src/portfolio/risk.h},
+\code{results/tables/portfolio\_\{summary,daily,regime,heat\_ez,heat\_ridge\}.csv},
+\code{results/figures/portfolio\_\{equity,allocation,risk,heat\_ez,heat\_ridge\}.png},
+\code{report/tables/portfolio.tex}.
+
+\subsection{Goal}
+
+A single basket is an anecdote. This phase builds a \emph{book}: four concurrent
+market-neutral spread strategies, allocated by inverse volatility with enforced
+concentration caps, measured with tail-risk statistics and decomposed by volatility
+regime --- and then asks the question a fund would ask, which is not ``what is the
+return?'' but ``what does the risk engineering buy?''.
+
+\subsection{The four strategies}
+
+Each is the identical Phase~\ref{ch:phase4} model --- causal 120-bar OLS hedge, $z$-bands
+$2.0/0.5$, next-bar execution, 10\,bps one-way --- on a disjoint name set spanning three
+GICS sectors:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llll}
+\toprule
+Target & Basket & Sector & Bars \\
+\midrule
+\code{ADBE} & \code{CRM}, \code{ADSK}, \code{INTU} & Information Technology (software) & 4{,}190 \\
+\code{AVGO} & \code{ADI}, \code{INTC}, \code{AAPL} & Information Technology (semis/hardware) & 4{,}191 \\
+\code{GS}   & \code{BAC} & Financials (large-cap banks) & 4{,}190 \\
+\code{CAT}  & \code{HON} & Industrials (capital goods) & 4{,}190 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The name sets are \emph{disjoint}, so the four daily P\&L streams are not mechanically
+correlated and combining them is a real diversification statement rather than a
+re-labelling of one position. Each strategy is dollar-neutral on its own
+(equation~\eqref{eq:grossing}), so the aggregate book has near-zero net dollar exposure by
+construction --- verified, not assumed, at every rebalance.
+
+\subsection{Allocation: inverse volatility with a water-filled cap}
+
+Weights are recomputed monthly (every 21 bars) from each strategy's trailing 252-day
+realized daily P\&L volatility, $w_i\propto1/\sigma_i$ normalised to sum to one
+(equation~\eqref{eq:inversevol}), then water-filled so that no strategy exceeds
+\textbf{45\%} of book capital (Section~\ref{sec:bt:sizing}). Book-level limits: gross
+weight $\le1.05$, absolute net weight $\le0.10$. Equal weighting is kept as the
+comparison baseline.
+
+At every rebalance the driver asserts and logs: $\sum_i w_i=1$ (book budget),
+$w_i\le0.45$ (concentration), gross and net within limits. The primitives
+(\code{inverse\_vol\_weights}, \code{gross\_exposure}, \code{net\_exposure},
+\code{within\_limits}) are unit-tested in C++ independently of any market data
+(\code{test\_inverse\_vol\_weights}, \code{test\_risk\_gross\_net\_limits}); the
+water-fill itself lives in \code{capture\_portfolio.py::cap\_weights} and its
+feasibility guard (if $\text{cap}\times m<1$ the constraint set is empty) reports
+infeasibility rather than silently violating the cap.
+
+\subsection{Results}
+
+\input{tables/portfolio.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/portfolio_equity.png}
+\caption{Combined NAV of the four-strategy book, net of costs, under equal-weight and
+inverse-vol allocation, 2010--2026. Shaded bands mark the COVID-2020 and 2022-selloff
+stress windows.}
+\label{fig:portfolio_equity}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/portfolio_allocation.png}
+\caption{Inverse-vol allocation across the four strategies, rebalanced monthly with a
+45\% per-strategy cap (water-fill). The book budget $\sum w=1$ and the cap are verified
+on every rebalance.}
+\label{fig:portfolio_alloc}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/portfolio_risk.png}
+\caption{Portfolio daily P\&L against the historical VaR$_{95}$ threshold (top) and the
+log drawdown of the inverse-vol book (bottom). Exceedances cluster in the two stress
+windows, as they should if the tail measure is measuring anything.}
+\label{fig:portfolio_risk}
+\end{figure}
+
+Table~\ref{tab:portfolio_summary} is the generated record; the curated extract below is
+the same data (net of 10\,bps, on \$1 gross):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llrrrrr}
+\toprule
+Book & Allocation & Net SR & Ann.\ net & MaxDD & VaR$_{95}$/day & CVaR$_{95}$/day \\
+\midrule
+\code{ADBE} & solo & $+0.050$ & $+0.38\%$ & $0.419$ & $0.00655$ & $0.01224$ \\
+\code{AVGO} & solo & $-0.417$ & $-3.31\%$ & $0.777$ & $0.00704$ & $0.01297$ \\
+\code{GS}   & solo & $-0.081$ & $-0.59\%$ & $0.312$ & $0.00693$ & $0.01200$ \\
+\code{CAT}  & solo & $-0.437$ & $-4.52\%$ & $0.846$ & $0.00910$ & $0.01704$ \\
+\midrule
+Combined & equal weight & $-0.463$ & $-2.01\%$ & $0.440$ & $0.00409$ & $0.00681$ \\
+Combined & \textbf{inverse vol} & $\mathbf{-0.401}$ & $\mathbf{-1.64\%}$ & $\mathbf{0.384}$ & $\mathbf{0.00389}$ & $\mathbf{0.00628}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The honest portfolio outcome}
+
+\textbf{The book loses money.} Net Sharpe is $-0.401$ (inverse-vol) to $-0.463$ (equal
+weight) over 2010--2026. Three of the four strategies are individually net-negative, and
+the fourth (\code{ADBE}, $+0.050$) is not significant. This is the truthful result and it
+is reported as the headline of the phase rather than buried under the risk statistics.
+
+What the risk engineering demonstrably buys is \emph{tail reduction}, and it is measurable:
+\begin{itemize}
+  \item \textbf{Drawdown.} The worst solo books draw down $0.777$ (\code{AVGO}) and
+    $0.846$ (\code{CAT}) of their gross notional; the combined book draws down $0.384$.
+    Diversification cuts the worst path statistic by more than half, and inverse-vol cuts
+    it a further $12.7\%$ versus equal weight ($0.440\to0.384$).
+  \item \textbf{VaR and CVaR.} VaR$_{95}$ falls from $0.00409$ (equal) to $0.00389$
+    (inverse-vol), $-4.9\%$; CVaR$_{95}$ falls from $0.00681$ to $0.00628$, $-7.8\%$.
+    CVaR improving more than VaR is the signature of genuinely cutting the far tail rather
+    than shifting the quantile --- and, per Section~\ref{sec:bt:risk}, CVaR is the coherent
+    measure, so it is the one to trust.
+  \item \textbf{Concentration discipline.} The 45\% cap prevents the allocation from
+    piling into \code{ADBE} (the only net-positive book) simply because it had the quietest
+    trailing year --- which is precisely the failure mode of uncapped inverse-vol
+    weighting, since low recent volatility is not low future volatility.
+\end{itemize}
+What it does not buy is return: with every component's expected net return at or below
+zero, no weighting of them produces a positive expectation. Risk controls manage the
+distribution of a given edge; they cannot create one.
+
+\subsection{Regime and stress decomposition}
+
+\begin{itemize}
+  \item \textbf{Volatility terciles} (1{,}376 days each, by trailing market volatility):
+    net Sharpe $-0.183$ (low), $\mathbf{-0.781}$ (mid), $-0.344$ (high), with
+    VaR$_{95}$ rising monotonically $0.00284\to0.00388\to0.00512$. The non-monotonicity
+    in Sharpe is itself the interesting result: the middle tercile --- unsettled enough to
+    break relationships, calm enough to keep trading them --- is the worst environment for
+    this book, while the highest tercile at least stops trading often enough to limit the
+    damage.
+  \item \textbf{COVID-2020} (221 days): net Sharpe $-0.206$, VaR$_{95}$ $0.00555$.
+    Bad, but not catastrophic --- the relationships bent rather than broke, and the
+    dollar-neutral construction absorbed most of the market move.
+  \item \textbf{2022 selloff} (251 days): net Sharpe $\mathbf{-1.306}$, VaR$_{95}$
+    $0.00471$, annualised net return $-5.97\%$. By far the worst window: the
+    rate-driven rotation out of growth equities broke exactly the software and
+    semiconductor relationships that two of the four baskets are built on, and it broke
+    them persistently enough that mean reversion kept paying the entry cost and never
+    delivering the convergence.
+  \item \textbf{2008 is not testable.} The panel begins 2010-01-04. The classic crisis for
+    relative-value strategies (when correlations went to one and convergence trades
+    diverged) is \emph{outside the sample} and cannot be measured. Disclosed here and in
+    Chapter~\ref{ch:nongoals} rather than extrapolated.
+\end{itemize}
+
+\subsection{Parameter sensitivity}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.70\linewidth]{figures/portfolio_heat_ez.png}
+\caption{Net Sharpe of the \code{ADBE} book as a function of regression lookback window
+$W$ and entry threshold $z_{\text{entry}}$, at 10\,bps one-way.}
+\label{fig:portfolio_heat_ez}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.70\linewidth]{figures/portfolio_heat_ridge.png}
+\caption{Net Sharpe of the \code{ADBE} book as a function of lookback window $W$ and ridge
+penalty $\lambda$, at $z_{\text{entry}}=2.0$.}
+\label{fig:portfolio_heat_ridge}
+\end{figure}
+
+The two surfaces (Tables \code{portfolio\_heat\_ez.csv}, \code{portfolio\_heat\_ridge.csv})
+are the most actionable result of the whole project, and they say something consistent
+with every cost calculation in Chapter~\ref{ch:backtestmath}:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lrrrr}
+\toprule
+$W$ & $z_{\text{entry}}=1.5$ & $2.0$ & $2.5$ & $3.0$ \\
+\midrule
+60  & $-0.244$ & $+0.076$ & $+0.044$ & $+0.153$ \\
+120 & $-0.070$ & $+0.050$ & $+0.097$ & $+0.154$ \\
+180 & $-0.165$ & $-0.081$ & $+0.137$ & $\mathbf{+0.206}$ \\
+252 & $-0.117$ & $-0.033$ & $+0.087$ & $+0.151$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{enumerate}[label=\textbf{P\arabic*.}]
+  \item \textbf{Raising the entry threshold helps, monotonically and strongly.} At every
+    window, net Sharpe rises with $z_{\text{entry}}$: at $W=180$,
+    $-0.165\to-0.081\to+0.137\to+0.206$ as the threshold goes $1.5\to3.0$. The mechanism
+    is \eqref{eq:costdrag}: a higher threshold trades less often, and each trade it does
+    take starts from a larger expected reversion
+    \eqref{eq:ou:profit}. Fewer, better-separated trades is the single biggest net-Sharpe
+    lever available.
+  \item \textbf{Longer windows help, but only with a high threshold.} The best cell
+    overall is $(W{=}180, z{=}3.0)$ at $+0.206$ --- four times the baseline
+    $(W{=}120, z{=}2.0)$ cell at $+0.050$. Longer windows give a smoother, less noisy
+    hedge (the same mechanism as ridge in Phase~\ref{ch:phase5}); combined with a high
+    entry bar, turnover collapses and the cost drag with it.
+  \item \textbf{A short window with a low threshold is the worst configuration.}
+    $(W{=}60, z{=}1.5)$ gives $-0.244$: a jumpy hedge and a trigger-happy policy is the
+    maximum-turnover combination, and cost consumes everything.
+  \item \textbf{Ridge helps at the windows where OLS churns.} On the $\lambda$ surface,
+    $W{=}60$ improves from $+0.076$ ($\lambda{=}0$) to $+0.273$ ($\lambda{=}10$) and
+    $+0.269$ ($\lambda{=}50$); $W{=}252$ improves from $-0.033$ to $+0.111$
+    ($\lambda{=}10$) and $+0.173$ ($\lambda{=}50$). At $W{=}120$ the effect is small and
+    non-monotone ($0.050\to0.041\to0.094\to0.025$). Shrinkage pays where the raw hedge is
+    least stable --- exactly the variance-reduction story of
+    equation~\eqref{eq:biasvariance}.
+\end{enumerate}
+
+\begin{remark}[Honesty: these surfaces are a search, and are priced as one]
+The best cell ($+0.206$) was found by scanning $4\times4=16$ window/threshold
+combinations and $4\times4=16$ window/$\lambda$ combinations on the \emph{same} data used
+to report it. That is data snooping in its most ordinary form, and it is why every one of
+these configurations is included in the $M=44$ audit of Phase~\ref{ch:phase10} rather than
+being presented as a discovery. The defensible statement is the \emph{shape} of the
+surface --- net Sharpe increases with entry threshold and with hedge smoothness, which is
+a prediction of \eqref{eq:costdrag} and \eqref{eq:ou:profit} made before the scan --- not
+the height of its best cell.
+\end{remark}
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] multiple concurrent basket trades (four, disjoint names, three sectors);
+  \item[\checkmark] inverse-vol sizing with per-strategy concentration cap, water-filled;
+  \item[\checkmark] VaR/CVaR computed and compared across allocations;
+  \item[\checkmark] gross/net limits enforced \emph{and verified} on every rebalance;
+  \item[\checkmark] regime segmentation (vol terciles) and stress windows (2020, 2022) tabulated;
+  \item[\checkmark] 2008 non-testability disclosed;
+  \item[\checkmark] sensitivity heatmaps (lookback $\times$ threshold, lookback $\times$
+    $\lambda$) generated from live runs.
+\end{itemize}

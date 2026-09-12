@@ -1,0 +1,378 @@
+% =============================================================================
+%  CHAPTER 4 -- REGULARIZATION: RIDGE, LASSO, ELASTIC NET, PCR
+% =============================================================================
+\section{Regularization: ridge, lasso, elastic net, principal components}
+\label{ch:regularization}
+
+Chapter~\ref{ch:ols} ended with OLS being unbiased but high-variance when regressors are
+correlated or numerous. This chapter derives the four remedies the project implements,
+in C++ (\code{src/model/basket\_selector.h}) and in Python (sklearn), and explains what
+each one's geometry implies for a hedging problem.
+
+\subsection{The general idea: constrained estimation}
+\label{sec:reg:idea}
+
+Every regularization method solves
+\begin{equation}
+  \hat\beta \;=\; \argmin_{\beta}\ \Bigl\{\ \underbrace{\tfrac12\lVert Y-X\beta\rVert_2^2}_{\text{fit}}
+  \;+\; \underbrace{\mathrm{Pen}(\beta)}_{\text{complexity}}\ \Bigr\},
+  \label{eq:reg:general}
+\end{equation}
+with $\mathrm{Pen}$ chosen to encode a prior belief about what a reasonable $\beta$ looks
+like. By the Lagrangian duality of convex problems, the ``penalty'' form
+\eqref{eq:reg:general} is equivalent to a ``constraint'' form
+$\min_\beta \tfrac12\lVert Y-X\beta\rVert^2$ subject to $\mathrm{Pen}(\beta)\le s$, with
+$\lambda$ and $s$ in one-to-one correspondence. The constraint picture is more
+illuminating: \emph{you are choosing the best-fitting point inside a shrunken region of
+parameter space}, and the shape of that region determines the qualitative behaviour.
+
+\begin{intuition}
+An L2 constraint region is a ball; an L1 region is a diamond (an octahedron in higher
+dimensions). The fit's contour ellipses are typically very elongated along the
+collinear directions. An elongated ellipse touching a \emph{ball} lands somewhere on the
+surface with all coordinates non-zero; touching a \emph{diamond} overwhelmingly lands on
+a \emph{corner}, and corners are where coordinates are exactly zero. That single picture
+is the entire difference between ridge (shrinks) and lasso (selects).
+\end{intuition}
+
+\subsection{Ridge regression}
+\label{sec:ridge}
+
+\subsubsection{Derivation}
+\label{sec:ridge:derivation}
+
+Take $\mathrm{Pen}(\beta)=\tfrac{\lambda}{2}\lVert\beta\rVert_2^2$ with $\lambda\ge0$:
+\begin{equation}
+  \hat\beta_{\text{ridge}} = \argmin_\beta\ \Bigl\{\tfrac12 (Y-X\beta)^{\top}(Y-X\beta)
+  + \tfrac{\lambda}{2}\beta^{\top}\beta\Bigr\}.
+\end{equation}
+The gradient is $-X^{\top}(Y-X\beta)+\lambda\beta$; setting it to zero,
+\begin{equation}
+  (X^{\top}X+\lambda I)\,\hat\beta_{\text{ridge}} \;=\; X^{\top}Y
+  \quad\Longrightarrow\quad
+  \boxed{\ \hat\beta_{\text{ridge}} = \bigl(X^{\top}X+\lambda I\bigr)^{-1}X^{\top}Y\ }
+  \label{eq:ridge}
+\end{equation}
+Since $X^{\top}X+\lambda I$ has eigenvalues $\lambda_i+\lambda>0$, the solution always
+exists and is unique, even for a singular $X^{\top}X$ --- which is why ridge is also a
+numerical stabiliser (Section~\ref{sec:ols:multicol}).
+
+\subsubsection{Bias and variance, exactly}
+\label{sec:ridge:biasvar}
+
+Write $A_\lambda=(X^{\top}X+\lambda I)^{-1}X^{\top}$ and
+$M = (X^{\top}X+\lambda I)^{-1}X^{\top}X$. Then
+$\hat\beta_{\text{ridge}} = M\beta + A_\lambda\eps$, so
+\begin{align}
+  \operatorname{Bias}(\hat\beta_{\text{ridge}}) &= (M-I)\beta
+    = -\lambda\bigl(X^{\top}X+\lambda I\bigr)^{-1}\beta, \label{eq:ridge:bias}\\
+  \Var(\hat\beta_{\text{ridge}}) &= \sigma^2 A_\lambda A_\lambda^{\top}
+    = \sigma^2\bigl(X^{\top}X+\lambda I\bigr)^{-1}X^{\top}X\bigl(X^{\top}X+\lambda I\bigr)^{-1}.
+    \label{eq:ridge:var}
+\end{align}
+Derivation of \eqref{eq:ridge:bias}: $M-I=(X^{\top}X+\lambda I)^{-1}(X^{\top}X - X^{\top}X-\lambda I)
+= -\lambda(X^{\top}X+\lambda I)^{-1}$. As $\lambda\to0$ the bias vanishes and
+\eqref{eq:ridge:var} becomes the OLS variance; as $\lambda\to\infty$ the estimator
+collapses to $0$ (zero variance, maximal bias). The MSE is minimized at an interior
+$\lambda^\ast>0$ whenever $\lVert\beta\rVert$ is finite and $n\ge2$ --- the celebrated
+fact that \emph{a biased estimator can beat OLS on MSE}. (Hoerl--Kennard existence
+result; the unit test in \code{test/engine\_tests.cpp} asserts the
+$\lambda\to0$ limit numerically.)
+
+\subsubsection{The spectral view: ridge is a low-pass filter}
+\label{sec:ridge:spectral}
+
+Use $X^{\top}X=V\Lambda V^{\top}$ (Section~\ref{sec:prob:linalg}) and rotate coordinates:
+$\tilde\beta=V^{\top}\beta$, $\tilde Z=V^{\top}X^{\top}Y$. Then
+\begin{equation}
+  \hat{\tilde\beta}_{\text{ridge},i} \;=\; \frac{\lambda_i}{\lambda_i+\lambda}\,
+  \hat{\tilde\beta}_{\text{OLS},i},
+  \label{eq:ridge:spectral}
+\end{equation}
+i.e.\ each principal direction of the regressor space is multiplied by a shrinkage
+factor $d_i=\lambda_i/(\lambda_i+\lambda)\in(0,1]$. Directions with large eigenvalues
+(strongly identified by the data) pass through almost unchanged; directions with small
+eigenvalues (weakly identified, where OLS is most volatile) are damped toward zero. This
+is exactly a \emph{low-pass filter} in eigenspace, and it explains both the empirical
+findings of Phase~\ref{ch:phase5} (ridge reduces hedge-weight churn: coefficient
+instability $0.998\to0.935$) and the numerical benefit (condition number bounded by
+$(\lambda_{\max}+\lambda)/\lambda$).
+
+\subsubsection{The Bayesian view: ridge is a Gaussian prior}
+\label{sec:ridge:bayes}
+
+Let $Y\mid\beta\sim\mathcal N(X\beta,\sigma^2 I)$ and put a prior
+$\beta\sim\mathcal N(0,\tau^2 I)$. The posterior is
+\[
+  p(\beta\mid Y) \;\propto\;
+  \exp\!\Bigl(-\frac{1}{2\sigma^2}\lVert Y-X\beta\rVert^2\Bigr)
+  \exp\!\Bigl(-\frac{1}{2\tau^2}\lVert\beta\rVert^2\Bigr),
+\]
+so the log-posterior is $-\frac{1}{2\sigma^2}\{\lVert Y-X\beta\rVert^2 +
+\frac{\sigma^2}{\tau^2}\lVert\beta\rVert^2\}$ and its mode is
+\eqref{eq:ridge} with $\lambda=\sigma^2/\tau^2$. Because both prior and likelihood are
+Gaussian, the posterior is Gaussian and the mode equals the mean: \emph{ridge is the
+posterior mean under a zero-mean Gaussian prior}. The prior variance $\tau^2$ is the
+knob: believing a priori that hedge weights are small ($\tau$ small) is the same as
+penalising them hard ($\lambda$ large). Economically: ``unless the data insists
+otherwise, hold a small, well-conditioned hedge.''
+
+\subsubsection{Generalised cross-validation and leave-one-out}
+\label{sec:ridge:loo}
+
+How do you choose $\lambda$ honestly? Cross-validation: hold out data, fit on the rest,
+score the held-out prediction error, pick the $\lambda$ that minimises it. For linear
+smoothers ($\hat Y = S_\lambda Y$ with $S_\lambda = X(X^{\top}X+\lambda I)^{-1}X^{\top}$)
+the leave-one-out error has a closed form that needs \emph{one} fit, not $T$:
+\begin{equation}
+  \mathrm{LOO}(\lambda) \;=\; \frac{1}{T}\sum_{t=1}^{T}
+  \Bigl(\frac{y_t-\hat y_t}{1-[S_\lambda]_{tt}}\Bigr)^{2},
+  \qquad
+  \mathrm{GCV}(\lambda) \;=\; \frac{\mathrm{RSS}(\lambda)/T}{\bigl(1-\tr(S_\lambda)/T\bigr)^{2}} .
+  \label{eq:gcv}
+\end{equation}
+The derivation of the LOO identity uses Sherman--Morrison \eqref{eq:shermanmorrison} on
+the rank-1 removal of observation $t$ from $X^{\top}X$. GCV replaces the individual
+leverages by their average and is the standard cheap surrogate.
+
+\begin{remark}[Honesty: we do not use GCV here]
+Phase~\ref{ch:phase5} selects $\lambda$ by \emph{walk-forward net Sharpe on a validation
+window} (2019--2021), not by prediction error, because the quantity we care about is the
+traded P\&L after costs, not the fit. That choice has a cost: it makes the selection
+itself a hypothesis that must be counted in the multiple-testing audit
+(Phase~\ref{ch:phase10} counts it: $M=44$). Selecting on prediction error would be more
+conservative statistically and less relevant economically. Both choices are defensible;
+the important thing is that the selection window is disjoint from the reported test
+window.
+\end{remark}
+
+\subsection{Lasso}
+\label{sec:lasso}
+
+\subsubsection{The problem and why there is no closed form}
+
+Take $\mathrm{Pen}(\beta)=\lambda\lVert\beta\rVert_1=\lambda\sum_j\lvert\beta_j\rvert$:
+\begin{equation}
+  \hat\beta_{\text{lasso}} = \argmin_\beta\ \Bigl\{\tfrac12\lVert Y-X\beta\rVert_2^2
+  + \lambda\lVert\beta\rVert_1\Bigr\}.
+  \label{eq:lasso}
+\end{equation}
+The absolute value is not differentiable at zero, so we work with \emph{subdifferentials}.
+For a convex $f$, $\partial f(\beta)$ is the set of subgradients $g$ with
+$f(b)\ge f(\beta)+g^{\top}(b-\beta)$ for all $b$. For $\lvert\beta_j\rvert$,
+\[
+  \partial\lvert\beta_j\rvert =
+  \begin{cases}
+    \{+1\} & \beta_j>0,\\
+    \{-1\} & \beta_j<0,\\
+    [-1,+1] & \beta_j=0 .
+  \end{cases}
+\]
+A point $\hat\beta$ minimises \eqref{eq:lasso} iff $0\in\partial$ of the objective, i.e.\
+for every $j$
+\begin{equation}
+  x_j^{\top}(Y-X\hat\beta) \;=\; \lambda\, s_j,
+  \qquad
+  s_j \in \partial\lvert\hat\beta_j\rvert .
+  \label{eq:lasso_kkt}
+\end{equation}
+Read \eqref{eq:lasso_kkt} carefully; it is the whole story of sparsity:
+\begin{itemize}
+  \item If $\hat\beta_j\ne0$, then $s_j=\sign(\hat\beta_j)$ and the residual correlation
+    $x_j^{\top}\hat\eps$ equals $\pm\lambda$ exactly: every included variable is
+    ``pushing'' with the maximum force the penalty allows.
+  \item If $\hat\beta_j=0$, the condition is only
+    $\lvert x_j^{\top}\hat\eps\rvert\le\lambda$: a variable stays out as long as its
+    marginal contribution to the fit is \emph{smaller than the penalty threshold}. This
+    is a genuine inequality, so solutions with $\hat\beta_j=0$ occur on a set of nonzero
+    measure --- sparsity is not an accident, it is the generic outcome.
+\end{itemize}
+This is impossible with the L2 penalty, whose derivative at zero is zero, so the
+equivalent condition would force $x_j^{\top}\hat\eps=0$ exactly --- a measure-zero event.
+
+\subsubsection{Coordinate descent and the soft-threshold operator}
+\label{sec:lasso:cd}
+
+Because \eqref{eq:lasso_kkt} cannot be solved in closed form for general $X$, we minimise
+cyclically over one coordinate at a time. Fixing all $\beta_k$, $k\ne j$, the objective as
+a function of $\beta_j$ alone is
+\[
+  \tfrac12\lVert r_{-j} - X_j\beta_j\rVert^2 + \lambda\lvert\beta_j\rvert,
+  \qquad r_{-j}=Y-\sum_{k\ne j}X_k\beta_k \ \text{(the partial residual)}.
+\]
+Expanding, this is a one-dimensional quadratic plus an absolute value; minimising over
+$\beta_j>0$ and $\beta_j<0$ separately and comparing gives the closed-form update
+\begin{equation}
+  \hat\beta_j \;\leftarrow\; \frac{1}{\rho_j}\,S_{\lambda}\!\bigl(X_j^{\top}r_{-j}\bigr),
+  \qquad \rho_j = X_j^{\top}X_j,
+  \qquad
+  S_{\lambda}(z)=\sign(z)\bigl(\lvert z\rvert-\lambda\bigr)_{+},
+  \label{eq:softthresh}
+\end{equation}
+where $(u)_+=\max(u,0)$. $S_\lambda$ is the \emph{soft-threshold} (or shrinkage)
+operator: subtract $\lambda$ from the magnitude, keep the sign, and clip at zero.
+Iterate over $j=1,\dots,n$ until no coordinate changes by more than a tolerance; sweep
+$\lambda$ over a decreasing path (warm-starting from the previous, sparser solution) to
+get the whole lasso path in a few passes. Coordinate descent is guaranteed to converge
+here because the objective is convex and \emph{separable} in the non-smooth part --- the
+standard sufficient condition (Tseng's convergence result for block-coordinate descent on
+smooth-plus-separable-convex objectives).
+
+\paragraph{Standardisation matters.} The penalty $\lambda\lvert\beta_j\rvert$ depends on
+the units of $X_j$: a regressor measured in dollars-per-share is penalised differently
+from one measured in log prices. All lasso results in this book are computed on
+column-standardised features ($x_j\mapsto(x_j-\bar x_j)/s_j$), with the intercept
+excluded from the penalty, and the coefficients mapped back afterwards. Not doing this is
+a common and silently damaging error.
+
+\subsection{Elastic net}
+\label{sec:elasticnet}
+
+\begin{equation}
+  \hat\beta_{\text{enet}} = \argmin_\beta\ \Bigl\{\tfrac12\lVert Y-X\beta\rVert^2
+  + \lambda_2\lVert\beta\rVert_2^2 + \lambda_1\lVert\beta\rVert_1\Bigr\},
+  \qquad
+  \text{often written } \lambda\bigl[\rho\lVert\beta\rVert_1 + \tfrac{1-\rho}{2}\lVert\beta\rVert_2^2\bigr].
+  \label{eq:elasticnet}
+\end{equation}
+Its motivation is a specific lasso pathology: with $p$ highly correlated regressors, lasso
+tends to pick \emph{one} of them arbitrarily (whichever the data path hits first) and
+ignore the rest, and the selection is unstable under small data perturbations. The L2
+part couples correlated coefficients --- the penalty is minimised by \emph{equal} weights
+on perfectly correlated regressors rather than by one large weight --- giving a
+``grouping effect''. The coordinate-descent update is the same soft-threshold with an
+inflated denominator:
+\begin{equation}
+  \hat\beta_j \leftarrow \frac{S_{\lambda_1}\bigl(X_j^{\top}r_{-j}\bigr)}{\rho_j+2\lambda_2},
+  \label{eq:enet:cd}
+\end{equation}
+so elastic net is a one-line change to a lasso implementation. Equivalently, elastic net
+is a lasso on the augmented data $\tilde X=[X;\sqrt{\lambda_2}I]$, $\tilde Y=[Y;0]$.
+
+\subsection{Principal components and principal component regression}
+\label{sec:pcr}
+
+\subsubsection{Deriving PCA as a variance-maximisation problem}
+\label{sec:pca:derivation}
+
+Centre the regressors: $\tilde X = X-\mathbf 1\bar x^{\top}$, and let
+$S=\tfrac1T \tilde X^{\top}\tilde X$ be the sample covariance. We seek the direction
+$v$ (unit norm) along which the projected data $\tilde X v$ has the largest variance:
+\begin{equation}
+  \max_{v}\ v^{\top}Sv \quad\text{s.t.}\quad v^{\top}v=1 .
+  \label{eq:pca:max}
+\end{equation}
+Lagrangian: $\mathcal L = v^{\top}Sv-\lambda(v^{\top}v-1)$, gradient
+$2Sv-2\lambda v=0$, hence
+\begin{equation}
+  S v = \lambda v ,
+  \label{eq:pca:eigen}
+\end{equation}
+so the candidate directions are eigenvectors, and the objective value at such a $v$ is
+$v^{\top}Sv=\lambda$. Maximising means taking the \emph{largest} eigenvalue. The second
+component is the maximiser subject to being orthogonal to the first, which yields the
+second-largest eigenvalue, and so on. The spectral theorem
+\eqref{eq:spectral} then gives $S=V\Lambda V^{\top}$ with
+$\lambda_1\ge\lambda_2\ge\dots\ge\lambda_n\ge0$ and orthonormal columns $v_i$.
+
+Components and scores: $Z=\tilde X V\in\R^{T\times n}$, with
+$\Cov(Z)=\Lambda$ (diagonal: components are uncorrelated) and
+$\Var(Z_{\cdot k})=\lambda_k$. The \emph{explained variance ratio} of component $k$ is
+$\lambda_k/\sum_i\lambda_i$, and the cumulative ratio tells you how many components to
+keep.
+
+\begin{intuition}
+In a basket of same-sector equities, $\lambda_1$ is huge relative to the rest: the first
+principal component is the common sector/market factor, and $v_1$ is roughly proportional
+to each name's volatility. Components $2,3,\dots$ are relative-value modes (``software
+versus semis within tech'', ``Adobe versus Autodesk''). A stat-arb trader cares about the
+\emph{trailing} components --- the relative-value modes --- while a risk manager cares
+about the \emph{leading} ones. This tension explains the PCR result of
+Phase~\ref{ch:phase5}: keeping only component 1 removes the market mode from the residual
+and produces the \emph{best raw signal} (highest IC, $0.21$) but a book that under-hedges
+the names' common drift and therefore the \emph{worst realized net Sharpe} ($0.03$).
+\end{intuition}
+
+\subsubsection{PCR and its relation to ridge}
+
+Regress $Y$ on the first $k$ components:
+\begin{equation}
+  \hat\beta_{\text{PCR}} \;=\; V_{:k}\bigl(Z_{:k}^{\top}Z_{:k}\bigr)^{-1}Z_{:k}^{\top}Y
+  \;=\; \sum_{i=1}^{k}\frac{v_i^{\top}\tilde X^{\top}Y}{T\lambda_i}\,v_i .
+  \label{eq:pcr}
+\end{equation}
+(The second equality uses $Z_{:k}^{\top}Z_{:k}=T\Lambda_k$.) Compare with ridge in the
+same rotated basis, equation~\eqref{eq:ridge:spectral}: ridge multiplies component $i$ by
+$\lambda_i/(\lambda_i+\lambda)$ --- a \emph{smooth} shrinkage --- whereas PCR multiplies
+by $1$ if $i\le k$ and $0$ otherwise --- a \emph{hard} cutoff. PCR is ridge with a step
+function; ridge is PCR with a smooth one. Since the eigenvalue ordering is only loosely
+related to how predictive each direction is, ridge is usually the safer default, which is
+what Phase~\ref{ch:phase5} finds.
+
+\subsubsection{Computing the eigendecomposition without a library}
+\label{sec:pca:jacobi}
+
+The sandbox has no Eigen and no LAPACK, so \code{src/model/dense\_la.h} implements a
+\emph{cyclic Jacobi} eigen-solver: repeatedly pick a pair of coordinates $(p,q)$, compute
+the rotation angle that annihilates the off-diagonal element $A_{pq}$,
+\begin{equation}
+  \tau = \frac{A_{qq}-A_{pp}}{2A_{pq}},\qquad
+  t = \frac{\sign(\tau)}{\lvert\tau\rvert+\sqrt{1+\tau^2}},\qquad
+  c = \frac{1}{\sqrt{1+t^2}},\quad s = tc,
+  \label{eq:jacobi}
+\end{equation}
+apply the Givens rotation $A\leftarrow J^{\top}AJ$ (with $J$ the identity except
+$J_{pp}=J_{qq}=c$, $J_{pq}=-s$, $J_{qp}=s$), and accumulate $V\leftarrow VJ$. Cycling over
+all pairs reduces the off-diagonal Frobenius norm monotonically; convergence is quadratic
+in the final sweeps. Cost $O(n^3)$ per sweep, which for $n\le5$ is nothing. Jacobi is
+chosen over Householder tridiagonalisation + QR because it is (i) about 60 lines with no
+scratch memory, (ii) extremely accurate for small symmetric matrices (it computes
+eigenvalues to high relative accuracy even when they are clustered), and (iii) trivially
+unit-testable --- the test asserts $V^{\top}V=I$, $AV=V\Lambda$, and that
+$\mathrm{PCR}(k{=}n)$ reproduces OLS exactly.
+
+\subsection{Choosing among the four: what the geometry implies for hedging}
+\label{sec:reg:comparison}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{p{0.13\linewidth}p{0.24\linewidth}p{0.24\linewidth}p{0.28\linewidth}}
+\toprule
+Method & Penalty / constraint & Effect on weights & When it is the right prior for a \emph{hedge} \\
+\midrule
+OLS & none & unbiased, high variance under collinearity & small basket, low collinearity, ample data \\
+Ridge & $\lambda\lVert\beta\rVert_2^2$ & all shrunk smoothly, none zero, correlated names share weight & \textbf{hedging}: every name carries shared factor exposure, so you want them all, just not wildly \\
+Lasso & $\lambda\lVert\beta\rVert_1$ & sparse; exactly zero beyond a threshold & \emph{selection}: large candidate pool where most names are irrelevant \\
+Elastic net & $\lambda_1\lVert\beta\rVert_1+\lambda_2\lVert\beta\rVert_2^2$ & sparse but groups correlated names & selection among many near-duplicates \\
+PCR & hard cutoff in eigenspace & weight only on top-$k$ directions & strong single factor, few effective dimensions \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The key insight, confirmed empirically in Phase~\ref{ch:phase5}: \emph{lasso's sparsity
+is the wrong inductive bias for a hedging regression}. Sparsity is what you want when the
+truth is that most candidate variables do not matter. In a three-name software basket, all
+three names matter --- INTU's individual coefficient is statistically insignificant over
+the full sample (HAC $t\approx0.45$, Table~\ref{tab:diag_coint}) yet removing it from the
+hedge still degrades the book, because it reduces residual variance in the rolling
+estimate. With $n=3$ and $\lambda$ chosen on validation, lasso and elastic net both
+collapse the hedge, and the net Sharpe falls from $0.050$ (OLS) to $0.007$ (lasso) and
+$-0.032$ (elastic net). Ridge, at $\alpha=10$, raises it to $0.094$.
+
+\subsection{Model selection discipline}
+\label{sec:reg:selection}
+
+Three rules, all applied in Part~II:
+\begin{enumerate}
+  \item \textbf{Nested windows.} train 2010--2018 / validation 2019--2021 / test
+    2022--2026, with the test period touched exactly once, at the end, for reporting.
+    Hyper-parameters ($\lambda$, $k$, window $W$, $z_{\text{entry}}$) are chosen on
+    validation only.
+  \item \textbf{Small coarse grids.} Ridge $\alpha\in\{0.1,1,10\}$, lasso/enet
+    $\alpha\in\{10^{-4},10^{-3},10^{-2}\}$, PCR $k\in\{1,2,3\}$, window
+    $W\in\{60,120,180,252\}$. Coarse grids limit the search space that the
+    multiple-testing audit must account for --- every grid point is a hypothesis.
+  \item \textbf{Count everything.} The audit of Phase~\ref{ch:phase10} enumerates
+    $M=44$ strategies actually examined, and the corrections are computed with that $M$.
+    A grid of 12 hyper-parameter settings and 4 baskets is not ``free''.
+\end{enumerate}

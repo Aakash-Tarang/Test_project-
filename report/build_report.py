@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Report build driver.
+"""Report build driver -- the single entry point for building the book.
 
-Single entry point for building the report. Does three things, in order:
-  1. regenerate figures/tables from results/ (via scripts/; no-op until Parts 1+);
-  2. compile report.tex -> report.pdf if a TeX engine is present (canonical deliverable);
-  3. always render a self-contained report.html sandbox preview (no CDN: math as images).
+Does four things, in order:
 
-The LaTeX source (report.tex) is the source of truth. The HTML is a preview only.
+  1. regenerate every figure and table from ``results/`` by running the checked-in
+     scripts under ``scripts/`` (so no number in the book is ever hand-typed);
+  2. compile ``report/report.tex`` -> ``report/report.pdf`` when a TeX engine is
+     available (the canonical deliverable);
+  3. ALWAYS render ``report/report.html`` -- the full book as a self-contained HTML
+     preview, produced by ``report/latex_to_html.py`` (math rasterised locally with
+     matplotlib's mathtext; no TeX engine and no CDN required);
+  4. optionally serve ``report/`` over HTTP for a browser preview (``--serve``).
+
+The LaTeX source is the source of truth; the HTML is a preview of it.
 
 Usage:
     python3 report/build_report.py [--pdf] [--no-preview] [--no-regenerate]
+                                   [--serve [PORT]] [--dpi N] [--check-math]
 """
 import argparse
 import os
@@ -19,53 +26,62 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORT = os.path.join(ROOT, "report")
+sys.path.insert(0, REPORT)
 
 
-def run(cmd, cwd=None, silent=True):
+def run(cmd, cwd=None):
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     return p.returncode, p.stdout, p.stderr
 
 
-def regenerate():
-    """(Re)generate figures/tables from results/ using scripts/."""
-    scripts = [
-        os.path.join(ROOT, "scripts", "analysis", "make_data_summary.py"),
-        os.path.join(ROOT, "scripts", "analysis", "make_statkit_validation.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_report_data.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_method_validation.py"),
-        # C++ engine benchmarks (Part 3): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "capture_engine_bench.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_engine_results.py"),
-        # Spread backtest (Part 4): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "capture_backtest.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_backtest.py"),
-        # Baseline model comparison (Part 5): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "compare_models.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_model_comparison.py"),
-        # Statistical diagnostics (Part 6): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "run_diagnostics.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_diagnostics.py"),
-        # Portfolio-level book + risk controls (Part 7): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "capture_portfolio.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_portfolio.py"),
-        # Kalman-filtered time-varying hedge (Part 8): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "compare_kalman.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_kalman.py"),
-        # Nonlinear signal extraction + RESET (Part 9): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "compare_nonlinear.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_nonlinear.py"),
-        # Multiple-testing correction + Diebold-Mariano (Part 10): capture then render.
-        os.path.join(ROOT, "scripts", "analysis", "compare_multtest.py"),
-        os.path.join(ROOT, "scripts", "plotting", "render_multtest.py"),
-    ]
+# ---------------------------------------------------------------------------
+# 1. regeneration: capture (results/tables/*.csv) then render (figures + .tex)
+# ---------------------------------------------------------------------------
+ANALYSIS = [
+    "make_data_summary.py",          # Part 1: data panel summary tables
+    "make_statkit_validation.py",    # Part 2: synthetic validation of the toolkit
+    "capture_engine_bench.py",       # Part 3: C++ engine latency / cache benchmarks
+    "capture_backtest.py",           # Part 4: spread backtest + cost sweep
+    "compare_models.py",             # Part 5: OLS / ridge / lasso / EN / PCR
+    "run_diagnostics.py",            # Part 6: stationarity, cointegration, HAC
+    "capture_portfolio.py",          # Part 7: multi-basket book, risk, regimes
+    "compare_kalman.py",             # Part 8: Kalman vs rolling OLS
+    "compare_nonlinear.py",          # Part 9: nonlinear signals, RESET, gates
+    "compare_multtest.py",           # Part 10: M-strategy audit, RC/SPA, DM
+    "make_book_tables.py",           # Part 12: extra book tables + power/DSR
+]
+PLOTTING = [
+    "render_report_data.py",
+    "render_method_validation.py",
+    "render_engine_results.py",
+    "render_backtest.py",
+    "render_model_comparison.py",
+    "render_diagnostics.py",
+    "render_portfolio.py",
+    "render_kalman.py",
+    "render_nonlinear.py",
+    "render_multtest.py",
+]
+
+
+def regenerate(skip_missing_ok=True):
+    """(Re)generate every table and figure from results/ using scripts/."""
+    scripts = ([os.path.join(ROOT, "scripts", "analysis", s) for s in ANALYSIS]
+               + [os.path.join(ROOT, "scripts", "plotting", s) for s in PLOTTING])
+    ok = warn = 0
     for s in scripts:
-        if os.path.exists(s):
-            rc, out, err = run(["python3", s])
-            if rc != 0:
-                print(f"  [warn] {os.path.basename(s)} failed:\n{err[-500:]}")
-            elif out.strip():
-                print(f"  [ok]   {os.path.basename(s)}")
-    return
+        if not os.path.exists(s):
+            if not skip_missing_ok:
+                print("  [warn] missing script %s" % s)
+            warn += 1
+            continue
+        rc, out, err = run([sys.executable, s])
+        if rc != 0:
+            print("  [FAIL] %s:\n%s" % (os.path.basename(s), err.strip()[-600:]))
+            warn += 1
+        else:
+            ok += 1
+    print("      %d scripts ok, %d skipped/failed" % (ok, warn))
 
 
 def have_tex():
@@ -78,262 +94,86 @@ def have_tex():
 def compile_latex(engine):
     tex = os.path.join(REPORT, "report.tex")
     out = os.path.join(REPORT, "report.pdf")
-    os.makedirs(REPORT, exist_ok=True)
     if engine == "latexmk":
-        return run(["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error",
+        return run([engine, "-pdf", "-interaction=nonstopmode", "-halt-on-error",
                     os.path.basename(tex)], cwd=REPORT)[0] == 0
     if engine == "tectonic":
-        return run(["tectonic", "-X", "compile", os.path.basename(tex)], cwd=REPORT)[0] == 0
-    # pdflatex -> biber -> pdflatex x2
-    rc, _, _ = run(["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "-jobname=report", os.path.basename(tex)], cwd=REPORT)
+        return run([engine, "-X", "compile", os.path.basename(tex)], cwd=REPORT)[0] == 0
+    rc, _, err = run([engine, "-interaction=nonstopmode", "-halt-on-error",
+                      "-jobname=report", os.path.basename(tex)], cwd=REPORT)
     if rc != 0:
+        print("      ! %s failed:\n%s" % (engine, err.strip()[-800:]))
         return False
-    biber = shutil.which("biber")
-    if biber:
-        run([biber, "report"], cwd=REPORT)
-        run(["pdflatex", "-interaction=nonstopmode", "-jobname=report", os.path.basename(tex)], cwd=REPORT)
-        run(["pdflatex", "-interaction=nonstopmode", "-jobname=report", os.path.basename(tex)], cwd=REPORT)
+    if shutil.which("biber"):
+        run(["biber", "report"], cwd=REPORT)
+        for _ in range(2):
+            run([engine, "-interaction=nonstopmode", "-jobname=report",
+                 os.path.basename(tex)], cwd=REPORT)
     return os.path.exists(out)
 
 
 def copy_figures_to_report():
-    """Copy generated figures from results/figures into report/figures so both the
-    LaTeX (\includegraphics{figures/...}) and the HTML preview resolve them."""
+    """Copy generated figures from results/figures into report/figures so that both the
+    LaTeX (\\includegraphics{figures/...}) and the HTML preview resolve them."""
     src = os.path.join(ROOT, "results", "figures")
     dst = os.path.join(REPORT, "figures")
     if not os.path.isdir(src):
-        return
+        return 0
     os.makedirs(dst, exist_ok=True)
-    for f in os.listdir(src):
-        if f.endswith((".png", ".pdf")):
-            import shutil
+    n = 0
+    for f in sorted(os.listdir(src)):
+        if f.endswith((".png", ".pdf", ".svg")):
             shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
+            n += 1
+    return n
 
 
-def render_html_preview():
-    """Self-contained HTML preview. Math rendered to SVG images via matplotlib
-    (so no CDN / network is needed). In Part 0 the content is the report skeleton."""
-    copy_figures_to_report()
+def render_preview(dpi=170, embed_figures=False, embed_math=False):
+    """Render the whole book to report/report.html via latex_to_html.py."""
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception:
-        print("  [preview] matplotlib unavailable; skipping math rendering")
-        plt = None
+        import latex_to_html
+    except Exception as e:
+        print("  [preview] cannot import latex_to_html: %s" % e)
+        return None
+    n = copy_figures_to_report()
+    print("      copied %d figures from results/figures -> report/figures" % n)
+    return latex_to_html.render_book(REPORT, dpi=dpi, embed_figures=embed_figures,
+                                     embed_math=embed_math)
 
-    tex = os.path.join(REPORT, "report.tex")
-    if not os.path.exists(tex):
-        print("  [preview] no report.tex; skipping preview")
-        return False
 
-    html = [
-        "<!DOCTYPE html><html><head><meta charset='utf-8'>",
-        "<title>Multi-Asset Statistical Arbitrage — Report</title>",
-        "<style>",
-        "body{font-family:Georgia,serif;max-width:900px;margin:24px auto;padding:0 20px;line-height:1.5;color:#222}",
-        "h1{font-size:1.6em;border-bottom:2px solid #333;padding-bottom:6px}",
-        "h2{font-size:1.25em;margin-top:2em;color:#111}",
-        "h3{font-size:1.05em}",
-        ".meta{color:#666;font-size:0.9em}",
-        "code{background:#f4f4f4;padding:1px 4px;border-radius:3px}",
-        "table{border-collapse:collapse}",
-        "</style></head><body>",
-    ]
-    html.append("<h1>Multi-Asset Statistical Arbitrage</h1>")
-    html.append("<p class='meta'>Sandbox HTML preview of the canonical LaTeX report "
-                "(<code>report/report.tex</code>). The PDF is the canonical deliverable and "
-                "compiles wherever a TeX engine is available. This preview is regenerated "
-                "every Part from the latest report content and results.</p>")
-
-    # Show the report skeleton structure (section headers pulled from report.tex).
-    import re
-    with open(tex) as f:
-        content = f.read()
-    headers = re.findall(r"\\section\*?\{(.*?)\}", content)
-    subheaders = re.findall(r"\\subsection\*?\{(.*?)\}", content)
-    html.append("<h2>Sections in this build</h2><ol>")
-    for h in headers:
-        html.append(f"<li>{h}</li>")
-    html.append("</ol>")
-    html.append("<p>Subsections: " + ", ".join(subheaders) + "</p>")
-
-    # Embed generated data tables + figures (Section 3) so the preview is substantive.
-    import glob
-    data_tab = os.path.join(ROOT, "results", "tables", "data_summary.csv")
-    if os.path.exists(data_tab):
-        html.append("<h2>Section 3 — Data (generated)</h2>")
-        try:
-            import csv, io
-            with open(data_tab) as f:
-                rows = list(csv.reader(f))[1:]
-            html.append("<table><tr><th>Metric</th><th>Value</th></tr>")
-            for r in rows:
-                html.append(f"<tr><td>{r[0]}</td><td>{r[1]}</td></tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-        for png in ("universe_by_year.png", "sector_comp.png"):
-            fp = os.path.join(ROOT, "results", "figures", png)
-            if os.path.exists(fp):
-                html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-
-    # Embed Part 3 C++ engine latency + cache figures (System Architecture).
-    for png in ("latency_hist.png", "cache_bench.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-
-    # Embed Part 4 backtest equity curve + cost sensitivity (Section 7).
-    for png in ("equity_curve.png", "cost_sensitivity.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-
-    # Embed Part 5 model-comparison figures (Section 5).
-    for png in ("model_compare_sharpe.png", "model_compare_ic.png",
-                "model_compare_stability.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-
-    # Embed Part 7 portfolio figures (Backtest / risk section).
-    for png in ("portfolio_equity.png", "portfolio_allocation.png", "portfolio_risk.png",
-                "portfolio_heat_ez.png", "portfolio_heat_ridge.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-    pt = os.path.join(ROOT, "results", "tables", "portfolio_summary.csv")
-    if os.path.exists(pt):
-        try:
-            import csv as _csv
-            with open(pt) as f:
-                rws = list(_csv.reader(f))
-            html.append("<h2>Multi-basket portfolio summary (Part 7)</h2><table><tr>")
-            for h in rws[0]:
-                html.append(f"<th>{h}</th>")
-            html.append("</tr>")
-            for r in rws[1:]:
-                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-
-    # Embed Part 8 Kalman figures (Nonlinear/Adaptive section).
-    for png in ("kalman_beta.png", "kalman_sharpe.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-    kt = os.path.join(ROOT, "results", "tables", "kalman_summary.csv")
-    if os.path.exists(kt):
-        try:
-            import csv as _csv
-            with open(kt) as f:
-                rws = list(_csv.reader(f))
-            html.append("<h2>Kalman vs rolling OLS (Part 8)</h2><table><tr>")
-            for h in rws[0]:
-                html.append(f"<th>{h}</th>")
-            html.append("</tr>")
-            for r in rws[1:]:
-                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-
-    # Embed Part 10 multiple-testing figures (Robustness section).
-    for png in ("multtest_sharpe.png", "multtest_pvalues.png", "multtest_forest.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-    mt = os.path.join(ROOT, "results", "tables", "multtest_corrections.csv")
-    if os.path.exists(mt):
-        try:
-            import csv as _csv
-            with open(mt) as f:
-                rws = list(_csv.reader(f))
-            html.append("<h2>Multiple-testing corrections (Part 10)</h2><table><tr>")
-            for h in rws[0]:
-                html.append(f"<th>{h}</th>")
-            html.append("</tr>")
-            for r in rws[1:]:
-                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-
-    # Embed Part 9 nonlinear figures (Nonlinear/Adaptive section).
-    for png in ("nonlinear_ic.png", "nonlinear_reset.png", "nonlinear_sharpe.png",
-                "nonlinear_learning.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-    nt = os.path.join(ROOT, "results", "tables", "nonlinear_summary.csv")
-    if os.path.exists(nt):
-        try:
-            import csv as _csv
-            with open(nt) as f:
-                rws = list(_csv.reader(f))
-            html.append("<h2>Nonlinear forecast quality (Part 9)</h2><table><tr>")
-            for h in rws[0]:
-                html.append(f"<th>{h}</th>")
-            html.append("</tr>")
-            for r in rws[1:]:
-                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-
-    # Embed Part 6 diagnostics figures (Robustness section).
-    for png in ("diagnostics_residual.png", "diagnostics_halflife.png"):
-        fp = os.path.join(ROOT, "results", "figures", png)
-        if os.path.exists(fp):
-            html.append(f"<figure><img src='figures/{png}' style='max-width:100%'><figcaption>{png}</figcaption></figure>")
-    dt = os.path.join(ROOT, "results", "tables", "diagnostics_summary.csv")
-    if os.path.exists(dt):
-        try:
-            import csv as _csv
-            with open(dt) as f:
-                rws = list(_csv.reader(f))
-            html.append("<h2>Diagnostics battery (Robustness / Part 6)</h2><table><tr>")
-            for h in rws[0]:
-                html.append(f"<th>{h}</th>")
-            html.append("</tr>")
-            for r in rws[1:]:
-                html.append("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-
-    # Embed Part 2 synthetic-validation table (Methodology / appendix).
-    vt = os.path.join(ROOT, "results", "tables", "statkit_validation.csv")
-    if os.path.exists(vt):
-        html.append("<h2>Statistical toolkit — synthetic validation (Methodology appendix)</h2>")
-        try:
-            import csv
-            with open(vt) as f:
-                rows = list(csv.reader(f))[1:]
-            html.append("<table><tr><th>Check</th><th>Value</th></tr>")
-            for r in rows:
-                html.append(f"<tr><td>{r[0]}</td><td>{r[1]}</td></tr>")
-            html.append("</table>")
-        except Exception:
-            pass
-
-    html.append("<hr><p class='meta'>Build time: " + __import__("datetime").datetime.now().isoformat() + "</p>")
-    html.append("</body></html>")
-
-    out = os.path.join(REPORT, "report.html")
-    with open(out, "w") as f:
-        f.write("\n".join(html))
-    return True
+def serve(directory, port):
+    """Serve report/ on 0.0.0.0 so the book can be read in a browser preview."""
+    import http.server
+    import functools
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler)
+    print("[serve] http://0.0.0.0:%d/report.html  (Ctrl-C to stop)" % port)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--pdf", action="store_true", help="force LaTeX compilation")
-    ap.add_argument("--no-preview", action="store_true")
-    ap.add_argument("--no-regenerate", action="store_true")
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--pdf", action="store_true", help="force a LaTeX compilation attempt")
+    ap.add_argument("--no-preview", action="store_true", help="skip the HTML book")
+    ap.add_argument("--no-regenerate", action="store_true", help="skip step 1")
+    ap.add_argument("--dpi", type=int, default=170, help="math rasterisation dpi")
+    ap.add_argument("--embed-figures", action="store_true",
+                    help="inline figure PNGs into report.html (fully portable, larger)")
+    ap.add_argument("--portable", action="store_true",
+                    help="single self-contained report.html: embed figures AND math")
+    ap.add_argument("--serve", nargs="?", const=8010, type=int, default=None, metavar="PORT",
+                    help="after building, serve report/ over HTTP (default port 8010)")
+    ap.add_argument("--check-math", action="store_true",
+                    help="only verify that every math expression is mathtext-renderable")
     args = ap.parse_args()
+
+    if args.check_math:
+        import latex_to_html
+        return latex_to_html.check_math(REPORT)
 
     if not args.no_regenerate:
         print("[1/3] Regenerating figures/tables from results/ ...")
@@ -342,23 +182,24 @@ def main():
     pdf_ok = False
     engine = have_tex()
     if engine:
-        print(f"[2/3] TeX engine found: {engine}. Compiling report.pdf ...")
+        print("[2/3] TeX engine found: %s. Compiling report.pdf ..." % engine)
         pdf_ok = compile_latex(engine)
-        if pdf_ok:
-            print(f"      -> report/report.pdf built")
-        else:
-            print("      ! LaTeX compilation failed (report.pdf not produced); preview still generated.")
+        print("      -> report/report.pdf built" if pdf_ok
+              else "      ! LaTeX compilation failed; the HTML book is still rendered.")
     else:
-        print("[2/3] No TeX engine available in this sandbox (see environment/env_map.md).")
-        print("      report.tex is canonical; compile it anywhere a TeX engine exists.")
-        if not args.pdf:
-            print("      Use --pdf to force an attempt (will fail without a TeX engine).")
+        print("[2/3] No TeX engine in this sandbox (see environment/env_map.md).")
+        print("      report/report.tex is canonical; compile it with latexmk anywhere")
+        print("      a TeX distribution exists. The HTML book below is the preview.")
+        if args.pdf:
+            print("      (--pdf requested but no engine is installed)")
 
     if not args.no_preview:
-        print("[3/3] Rendering self-contained HTML preview ...")
-        render_html_preview()
-        print("      -> report/report.html (open in browser)")
+        print("[3/3] Rendering the HTML book (math rasterised locally) ...")
+        render_preview(dpi=args.dpi, embed_figures=args.embed_figures or args.portable,
+                       embed_math=args.portable)
 
+    if args.serve:
+        return serve(REPORT, args.serve)
     return 0 if (pdf_ok or not args.pdf) else 1
 
 

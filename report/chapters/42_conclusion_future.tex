@@ -1,0 +1,133 @@
+% =============================================================================
+%  CHAPTER 28 -- CONCLUSION AND FUTURE WORK
+% =============================================================================
+\section{Conclusion and future work}
+\label{ch:conclusion}
+
+\subsection{The answer to the question the project was built to answer}
+
+\emph{Does a statistically defensible statistical-arbitrage edge exist in this universe,
+after costs, out-of-sample validation, and correction for the breadth of the search?}
+
+\textbf{No --- not at this frequency, this breadth, and this cost level.} The precise
+statement, with the numbers that support it:
+\begin{enumerate}
+  \item No strategy in the audited set of $M=44$ rejects $H_0$: mean daily net P\&L
+    $\le0$ at the Bonferroni-corrected level $\alpha/M=0.001136$; \textbf{zero} survive.
+    The best raw one-sided HAC $p$-value in the entire set is $0.0587$, which does not
+    clear even the uncorrected 5\% bar.
+  \item The bootstrap data-snooping tests, which account for the cross-strategy dependence
+    that Bonferroni ignores, agree: White's Reality Check $p=0.868$, Hansen's SPA
+    $p=0.638$.
+  \item The best observed Sharpe ($0.346$) is \emph{below} the expected maximum of 44
+    noise strategies given their realized dispersion ($\mathrm{SR}_0=0.474$), the deflated
+    Sharpe ratio is $0.305$ against a $>0.95$ bar, and the stationary-bootstrap 95\%
+    interval for it, $[-0.058,\ +0.753]$, contains zero.
+  \item No pairwise comparison of hedge estimators is statistically separable: all ten
+    Diebold--Mariano $p$-values lie in $[0.22,0.96]$ and every HAC confidence interval
+    spans zero.
+  \item The four-strategy book is net-negative over the full sample (net Sharpe $-0.401$
+    inverse-vol, $-0.463$ equal-weight), and the single-basket baseline is net $+0.050$
+    against a standard error of $\approx0.245$.
+\end{enumerate}
+
+\subsection{What is nevertheless established}
+
+The negative verdict applies to the \emph{magnitude of the traded Sharpe}. It does not
+apply to the structure, which is established by tests that do not involve selecting a
+maximum and is therefore immune to the multiplicity argument:
+
+\begin{itemize}
+  \item \textbf{Adaptive estimation creates the tradeable object.} The rolling-hedge spread
+    rejects a unit root decisively (ADF $p<10^{-3}$, half-life $9.4$ bars, stable across
+    2010--2026 and 2022+); the static sixteen-year hedge does not ($p=0.083$, half-life
+    $171$--$476$ bars). Mean reversion in this universe is a property of an
+    \emph{adaptively estimated} relationship, not of a fixed long-run one. That is a real,
+    non-obvious, and reproducible econometric finding.
+  \item \textbf{The basket is genuinely cointegrated} (Johansen rank $r=2$; Engle--Granger
+    $p=0.003$ and $0.033$ for two of three legs) and the dominant hedge weights survive
+    HAC correction ($t=7.3$, $9.4$) --- while naive inference would have overstated them by
+    a factor of four.
+  \item \textbf{The signal has out-of-sample directional content} (IC $0.125$--$0.211$ on a
+    pre-specified 2022+ test window, positive for all five linear estimators and for the
+    Kalman innovation).
+  \item \textbf{Cost, not signal, is the binding constraint.} $87\%$ of the gross return is
+    paid away at 10\,bps one-way; break-even is $\approx11$\,bps; every improvement found
+    (ridge, smooth Kalman, higher entry threshold, longer window) works by reducing
+    turnover. The sensitivity surface's shape is predicted in advance by
+    \eqref{eq:costdrag} and \eqref{eq:ou:profit} and confirmed by measurement.
+  \item \textbf{Linear beats nonlinear, for a reason that is a property of the sample and
+    not of the market.} The GBM's learning curve is still negative at $2{,}400$ of the
+    $\approx2{,}881$ available training bars; RESET does not reject linearity on the main
+    basket; and no nonlinear entry gate improves net Sharpe.
+  \item \textbf{The engineering claims are measured and traceable.} 24 C++ tests /
+    2{,}852 assertions, 35 statistical unit tests, 52/52 exit-gate checks, zero allocations
+    in the hot path, incremental regression equal to brute force at $10^{-8}$, and every
+    systems number captured from a live run into a CSV.
+\end{itemize}
+
+\subsection{Under what conditions would the answer change?}
+
+Three, in order of expected value (Chapter~\ref{ch:nongoals} gives the operational detail):
+\begin{enumerate}
+  \item \textbf{More breadth, tested as a book.} $\mathrm{IR}=\mathrm{IC}\sqrt{B}$
+    \eqref{eq:fundamentallaw}: the same per-basket IC of $\approx0.15$--$0.2$ across 200
+    disjoint baskets implies a book Sharpe of $2$--$3$ before costs and, crucially, a
+    \emph{single} hypothesis to test rather than 200. This converts an unfalsifiable
+    experiment into a falsifiable one, and the engine's $\approx600$\,ns per-bar cost
+    already supports the required $10^6$-backtest scan.
+  \item \textbf{Higher frequency.} $T^\ast=(z/\mathrm{SR}_d)^2$ is measured in bars; moving
+    from daily to hourly multiplies the annual sample by $\approx7$ and shortens half-lives
+    by one to two orders of magnitude, which is the same effect as breadth but on the time
+    axis.
+  \item \textbf{Lower cost per unit of turnover.} Break-even is $\approx11$\,bps one-way at
+    the current turnover. Halving the effective cost --- by trading less often, by crossing
+    spreads rather than paying them, or by netting within the book --- roughly doubles the
+    net Sharpe of every variant measured here, without any new signal.
+\end{enumerate}
+What would \emph{not} change the answer: more hyper-parameter search, more baskets searched
+post hoc, a more flexible model on the same features, or reporting gross rather than net
+numbers. All four increase $M$ faster than they increase power.
+
+\subsection{Future work, prioritised}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{p{0.06\linewidth}p{0.32\linewidth}p{0.28\linewidth}p{0.24\linewidth}}
+\toprule
+\# & Task & Why it is next & Expected effect \\
+\midrule
+1 & Automated universe-wide basket construction (sub-industry peers by market cap, or lasso-selected within sector) run over all 195 names, with an FDR-controlled audit & converts an unfalsifiable design into a falsifiable one & power $\times\sqrt{50}$; verdict either way \\
+2 & Survivorship-bias-free panel (historical membership + delisted prices + delisting returns) & removes the one bias that is known to flatter every number here & Sharpe down, MaxDD up \\
+3 & Borrow cost, financing, and a capacity curve (Sharpe vs AUM under a participation constraint) & the two largest omitted costs, both adversarially correlated with the opportunity & net return down; capacity quantified \\
+4 & Volatility-targeted position sizing (and optionally a GARCH-standardised $z$) & attacks the cost-drag problem from the sizing side, which the sensitivity surfaces show is where the leverage is & plausibly the largest single net-Sharpe lever available without new data \\
+5 & Pool all baskets into one supervised-learning problem with basket fixed effects & gives the nonlinear models the $T\times N$ sample they need; the only fair test of the Chapter~\ref{ch:nonlinear} question & settles linear vs nonlinear properly \\
+6 & Purging and embargo on all walk-forward splits; Benjamini--Hochberg FDR instead of Bonferroni for large $M$ & removes the $h$-bar label leakage and the over-conservatism at scale & tighter, more honest inference \\
+7 & Port the Kalman filter to \code{src/model/} and re-run the sweep in C++ & completes the engine; enables item 1 at scale & no change to conclusions; $\approx10^3\times$ faster sweeps \\
+8 & Tighten the latency histogram range to $[100\,\text{ns},10\,\mu\text{s}]$ and add a monotonic-clock overhead calibration & resolves the p95/p99 bucket collapse and subtracts the instrument's own cost & honest tail latency \\
+9 & Factor-model neutralisation and ex-ante exposure reporting & the 2022 loss was a factor event the dollar-neutral book could not see & lower tails, lower return \\
+10 & Drift monitoring: rolling DM test of live-versus-expected P\&L & the first operational piece any live deployment needs & none on backtest; essential in production \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{What this project is, stated plainly}
+
+It is not a strategy and it is not a claim of alpha. It is a complete, reproducible,
+adversarially audited implementation of the basket statistical-arbitrage idea --- data
+pipeline with a ten-check quality gate, a unit-tested statistical library, a
+dependency-free C++ simulation engine with property-based correctness tests, five hedge
+estimators and an adaptive state-space estimator compared through one identical causal
+cost-aware harness, the full diagnostic battery on the residuals actually traded, a
+four-strategy book with enforced and verified risk limits, a nonlinear extension with an
+honest negative verdict, a 44-hypothesis data-snooping audit with bootstrap corrections and
+a power analysis, and a book-length report generated from the results by code.
+
+Its empirical conclusion is negative and its methodological conclusion is positive: the
+edge's \emph{structure} reproduces, its \emph{magnitude} does not survive honest
+accounting, and the reason is quantitative and known --- not enough independent bets, at too
+high a cost per bet, in a sample whose own standard error is five times the effect being
+measured. A negative result delivered this way is worth more than a positive one delivered
+without the audit, because it tells you exactly what to change: breadth, frequency, or
+cost. Everything in this repository is built to make that next experiment cheap to run.

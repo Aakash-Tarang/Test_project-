@@ -1,0 +1,232 @@
+% =============================================================================
+%  CHAPTER 6 -- MEAN REVERSION AND THE ORNSTEIN--UHLENBECK PROCESS
+% =============================================================================
+\section{Mean reversion and the Ornstein--Uhlenbeck process}
+\label{ch:ou}
+
+Chapter~\ref{ch:timeseries} established \emph{whether} a spread is stationary. This
+chapter quantifies \emph{how fast} it comes home, which is the difference between a
+tradeable signal and an interesting curiosity.
+
+\subsection{Stochastic differential equations in one page}
+\label{sec:ou:sde}
+
+A continuous-time diffusion is written
+\begin{equation}
+  \dd X_t \;=\; \underbrace{a(X_t,t)}_{\text{drift}}\dd t
+  \;+\; \underbrace{b(X_t,t)}_{\text{diffusion}}\dd W_t ,
+  \label{eq:sde}
+\end{equation}
+where $W_t$ is a standard Brownian motion (Wiener process): $W_0=0$, independent
+increments, and $W_{t+s}-W_t\sim\mathcal N(0,s)$. The notation $\dd W_t$ is formal ---
+Brownian paths are nowhere differentiable, so \eqref{eq:sde} means the integral equation
+$X_t = X_0+\int_0^t a\dd s + \int_0^t b\dd W_s$ with the second integral in the Itô sense.
+
+Two properties of Brownian motion do all the work:
+\begin{align}
+  \E\Bigl[\int_0^t f\dd W_s\Bigr] &= 0 &&\text{(the Itô integral is a martingale)}, \label{eq:ito:mean}\\
+  \Var\Bigl[\int_0^t \dd W_s\Bigr] = \E[W_t^2] &= t &&\text{(variance grows linearly in time)}, \label{eq:ito:var}\\
+  (\dd W_t)^2 &= \dd t &&\text{(Itô's rule; quadratic variation)}. \label{eq:ito:qvar}
+\end{align}
+\eqref{eq:ito:var} is the continuous-time origin of the $\sqrt T$ scaling in
+\eqref{eq:clt}: volatility over a horizon $h$ is $\sigma\sqrt h$, and annualising daily
+volatility by $\sqrt{252}$ is the same statement in discrete time.
+
+\subsection{The OU process: definition, solution, and moments}
+\label{sec:ou:definition}
+
+\begin{definition}[Ornstein--Uhlenbeck]
+\begin{equation}
+  \dd X_t \;=\; \theta\bigl(\mu - X_t\bigr)\dd t + \sigma\dd W_t,
+  \qquad \theta>0,
+  \label{eq:ou}
+\end{equation}
+with $\theta$ the \emph{speed of mean reversion}, $\mu$ the long-run mean, and $\sigma$
+the instantaneous diffusion.
+\end{definition}
+
+\paragraph{Solving it.} Multiply by the integrating factor $e^{\theta t}$:
+\[
+  \dd\bigl(e^{\theta t}X_t\bigr) = e^{\theta t}\theta\mu\dd t + e^{\theta t}\sigma\dd W_t ,
+\]
+(the $e^{\theta t}(-\theta X_t)\dd t$ term cancels the drift's $X$-dependence), integrate
+from $0$ to $t$, divide by $e^{\theta t}$:
+\begin{equation}
+  X_t \;=\; \mu + \bigl(X_0-\mu\bigr)e^{-\theta t} + \sigma\int_0^t e^{-\theta(t-s)}\dd W_s .
+  \label{eq:ou:solution}
+\end{equation}
+The stochastic integral is Gaussian with mean zero and, by the Itô isometry
+$\E[(\int f\dd W)^2]=\int f^2\dd s$,
+\begin{equation}
+  \Var(X_t) \;=\; \sigma^2\int_0^t e^{-2\theta(t-s)}\dd s
+  \;=\; \frac{\sigma^2}{2\theta}\bigl(1-e^{-2\theta t}\bigr).
+  \label{eq:ou:variance}
+\end{equation}
+So the conditional moments are
+\begin{equation}
+  \E[X_t\mid X_0] = \mu + (X_0-\mu)e^{-\theta t},
+  \qquad
+  \Var(X_t\mid X_0) = \frac{\sigma^2}{2\theta}\bigl(1-e^{-2\theta t}\bigr),
+  \label{eq:ou:moments}
+\end{equation}
+and as $t\to\infty$ the process converges to its stationary (invariant) distribution
+\begin{equation}
+  X_\infty \sim \mathcal N\Bigl(\mu,\ \frac{\sigma^2}{2\theta}\Bigr),
+  \qquad
+  \Cov(X_t, X_{t+\ell}) = \frac{\sigma^2}{2\theta}e^{-\theta\lvert\ell\rvert},
+  \label{eq:ou:stationary}
+\end{equation}
+i.e.\ an AR(1)-style exponentially decaying autocovariance with $\phi=e^{-\theta}$
+(compare \eqref{eq:ar1}).
+
+\paragraph{Half-life.} From \eqref{eq:ou:moments}, the expected deviation from $\mu$
+halves when $e^{-\theta t}=\tfrac12$:
+\begin{equation}
+  \boxed{\ \tau_{1/2} \;=\; \frac{\ln 2}{\theta}\ }
+  \label{eq:halflife}
+\end{equation}
+This single number governs the whole strategy's economics: it says how long the
+mispricing lives, and hence how long you must hold, how much you can expect to earn per
+trade, and how much turnover (and cost) you will incur.
+
+\begin{intuition}
+An OU process is a spring with friction, hit by random kicks. $\theta$ is the spring
+stiffness: stiff springs snap back fast (small $\tau_{1/2}$, many trades, high cost,
+each trade earning little); loose springs drift back slowly (few trades, each earning
+more, but you must survive a long exposure). $\sigma$ is the size of the kicks and sets
+the stationary dispersion $\sigma/\sqrt{2\theta}$: the typical size of the deviation you
+get to trade. The ratio that matters for profit-per-trade is roughly
+$\text{(deviation captured)} \times \text{(probability of reversion)} - \text{(cost)}$,
+and both terms are functions of $\theta$ and $\sigma$.
+\end{intuition}
+
+\subsection{Estimating $\theta,\mu,\sigma$ from daily data}
+\label{sec:ou:estimation}
+
+\subsubsection{The discretised regression (what \code{statkit.ou} does)}
+
+The Euler discretisation of \eqref{eq:ou} with sampling interval $\Delta t=1$ is
+\[
+  X_{t+1}-X_t \;=\; \theta\mu\Delta t - \theta X_t\Delta t + \sigma\sqrt{\Delta t}\,\eta_{t+1},
+  \qquad \eta\sim\mathcal N(0,1)\ \text{i.i.d.}
+\]
+which is an ordinary linear regression of the first difference on a constant and the
+lagged level:
+\begin{equation}
+  \Delta X_t \;=\; a + b\,X_{t-1} + e_t,
+  \qquad
+  \hat\theta = -\hat b,\quad
+  \hat\mu = -\hat a/\hat b,\quad
+  \hat\sigma = \hat s_e\ \ (\Delta t=1),
+  \label{eq:ou:regression}
+\end{equation}
+and $\hat\tau_{1/2}=\ln 2/\hat\theta$. The exact discretisation
+\eqref{eq:ou:moments} gives the same regression with $b=e^{-\theta}-1\approx-\theta$ for
+small $\theta$, so the Euler version is accurate for daily data where
+$\theta\approx0.07$; the exact maximum-likelihood version (which regresses $X_t$ on
+$X_{t-1}$ and converts $b=e^{-\theta}$) is preferred when $\theta$ is large.
+
+\begin{remark}[Why this is not the same as an ADF test --- and why we run both]
+\eqref{eq:ou:regression} with $H_0:b=0$ is algebraically the Dickey--Fuller regression
+\eqref{eq:df}. The \emph{estimator} is the same; the \emph{inference} is not. Under
+$H_0:b=0$ with a stationary \emph{alternative}, the $t$-statistic has the non-standard
+DF distribution \eqref{eq:dfdistribution}, not a normal one --- so you cannot report
+``$\hat\theta$ is significant at 5\%'' from a normal table. We therefore report the ADF
+$p$-value (correct critical values, via \code{statsmodels}) for the \emph{test}, and the
+OU regression for the \emph{magnitude} $\hat\theta$ and $\hat\tau_{1/2}$. Conflating the
+two is a common error.
+\end{remark}
+
+\subsubsection{Bias, and how good our estimate is}
+
+The OLS estimate of $b$ in an AR(1) is biased downward (toward more mean reversion) in
+finite samples by approximately $-(1+3\phi)/T$; with $\phi\approx1$ and $T=4{,}070$ this
+is a bias of $\approx-10^{-3}$ in $b$, i.e.\ $\approx-10^{-3}$ in $\theta$. For the
+static hedge ($\hat\theta\approx0.004$) that bias is 25\% of the estimate --- the
+half-life of $\sim171$ bars is not precise. For the rolling spread
+($\hat\theta\approx0.074$) the bias is $\approx1.4\%$, and the half-life of $9.4$ bars is
+trustworthy to roughly a bar. This is why Phase~\ref{ch:phase6} reports the half-life
+for both periods and both models rather than a single headline number.
+
+The toolkit's own recovery test (\code{scripts/run\_statkit\_tests.py},
+Table~\ref{tab:statkit_validation}) simulates an OU process with a \emph{known}
+$\theta=0.4$ and estimates $\hat\theta=0.3965$ --- a $0.9\%$ error --- with an implied
+half-life of $1.748$ against the true $\ln 2/0.4 = 1.733$ ($0.9\%$). Knowing the truth is
+the only way to validate an estimator, which is why the synthetic tests exist.
+
+\subsection{From half-life to a trading rule}
+\label{sec:ou:trading}
+
+\subsubsection{How much of a reversion do you capture?}
+
+If you enter at deviation $z_0$ (in standard-deviation units) and hold for $h$ bars, the
+expected remaining deviation is $z_0e^{-\theta h}$, so the expected captured reversion is
+\begin{equation}
+  \E[\text{gain}] \;=\; z_0\bigl(1-e^{-\theta h}\bigr) .
+  \label{eq:ou:gain}
+\end{equation}
+At $h=\tau_{1/2}$ you capture 50\%; at $h=2\tau_{1/2}$, 75\%; at $h=3\tau_{1/2}$,
+87.5\%. The marginal gain per extra bar is $z_0\theta e^{-\theta h}$, which decays
+geometrically --- there is a natural stopping point, and holding much longer than
+$2$--$3$ half-lives buys almost nothing while paying carry, borrow, and tail risk.
+
+\paragraph{The measured match.} Phase~\ref{ch:phase6} finds
+$\hat\tau_{1/2}=9.36$--$9.44$ bars for the traded rolling spread and a realized average
+holding period of $16.2$ bars (full sample) / $17.3$ bars (2022+): \textbf{1.7--1.9
+half-lives per trade}, capturing $\approx70$--$73\%$ of the expected reversion by
+\eqref{eq:ou:gain}. That is a reasonable horizon by the theory --- but it sits on the
+turnover-heavy side, and turnover is what the 10\,bps cost model punishes. The exit band
+$z_{\text{exit}}=0.5$ (rather than 0) is what keeps the average hold at 16 rather than 30
+bars; the sensitivity surface of Phase~\ref{ch:phase7} shows that tightening the entry
+band and lengthening the window (fewer, longer, better-separated trades) is the single
+biggest net-Sharpe lever available, from $0.05$ at $(W{=}120, z_{\text{entry}}{=}2.0)$ to
+$0.21$ at $(W{=}180, z_{\text{entry}}{=}3.0)$.
+
+\subsubsection{The optimal-threshold intuition}
+
+A formal treatment: with entry threshold $z_e$, exit $z_x$, per-bar carry $\kappa$, and
+round-trip cost $c$, the expected profit per trade is approximately
+\begin{equation}
+  \pi(z_e) \;\approx\; \sigma_S\Bigl[(z_e-z_x)\bigl(1-e^{-\theta h}\bigr)\Bigr]
+  \;-\; c\;-\;\kappa h(z_e),
+  \qquad
+  h(z_e)\approx \frac{1}{\theta}\log\frac{z_e-z_x}{\text{target}},
+  \label{eq:ou:profit}
+\end{equation}
+and the number of trades per year falls as $z_e$ rises (roughly like the tail probability
+of the stationary distribution, $2\Phi(-z_e)$ per bar of exposure). Raising $z_e$
+therefore increases profit per trade and decreases trade count. The optimum trades off
+the two, and it moves \emph{up} as $c$ rises. This is exactly the pattern in the
+measured heatmaps: at 10\,bps the best $(W,z_{\text{entry}})$ cell is
+$(180, 3.0)$ with net Sharpe $0.206$, whereas the low-threshold cell $(60,1.5)$ is
+$-0.244$. Cost, not signal, is what sets the optimal trading frequency.
+
+\subsection{Why the OU model can be wrong about your spread}
+\label{sec:ou:caveats}
+
+Four failure modes, each observed or guarded against in this project:
+\begin{enumerate}
+  \item \textbf{The mean $\mu$ is not constant.} A rolling hedge makes $\hat\alpha_t$ and
+    $\hat\beta_t$ move, so the ``equilibrium'' the spread reverts to drifts. This is the
+    KPSS rejection on the full-sample rolling spread (Phase~\ref{ch:phase6}: ADF rejects
+    a unit root but KPSS rejects strict level-stationarity, verdict \emph{ambiguous}).
+    Remedy: standardise on a trailing window, not the full sample --- which is what
+    equation~\eqref{eq:saa:z} does.
+  \item \textbf{$\theta$ is state-dependent.} Reversion is faster in calm markets and
+    slower (or negative) in crises, when correlations jump and relative-value positions
+    diverge. The regime table of Phase~\ref{ch:phase7} shows exactly that: net Sharpe
+    $-0.18$ in the lowest volatility tercile, $-0.78$ in the middle, $-0.34$ in the
+    highest, and $-1.31$ in the 2022 selloff window.
+  \item \textbf{$\sigma$ is not constant.} Volatility clustering
+    (Section~\ref{sec:ts:arch}) means the stationary variance $\sigma^2/2\theta$ is
+    time-varying, so a fixed $z$-threshold means different things in 2011 and 2020.
+    Remedy: the trailing $\hat\sigma_{S,t}$; better (untested here): volatility-targeted
+    sizing.
+  \item \textbf{The process is not Gaussian.} Real spreads have fat tails and can jump
+    (earnings, M\&A, a peer's guidance cut). An OU fit will treat a permanent break as a
+    large temporary deviation and keep adding to the position. This is the classic
+    ``picking up pennies in front of a steamroller'' failure of pairs trading, and no
+    amount of statistical testing on historical data removes it --- only position limits,
+    stop-losses, and fundamental monitoring do. Phase~\ref{ch:phase7} implements the
+    limits; the monitoring is future work.
+\end{enumerate}

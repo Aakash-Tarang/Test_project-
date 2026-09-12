@@ -143,6 +143,9 @@ def main():
     T, M = mat.shape
     labels = list(mat.columns)
     perf = mat.values                            # (T, M) daily net returns
+    # Persist the aligned (T, M) daily net-P&L matrix so downstream analyses
+    # (power / deflated-Sharpe, report tables) never have to re-simulate.
+    mat.to_csv(os.path.join(TAB, "multtest_pnl.csv"))
 
     # ---- Bonferroni over per-strategy HAC p-values (mean>0) ----
     pvals = audit.set_index(["basket", "model"])["p_mean_gt0"].values

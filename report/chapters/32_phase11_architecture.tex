@@ -1,0 +1,217 @@
+% =============================================================================
+%  CHAPTER 24 -- PHASE 11: ARCHITECTURE AND LATENCY
+% =============================================================================
+\section{Phase 11 --- System architecture and latency analysis}
+\label{ch:phase11}
+
+\textbf{Reproduce it:} \code{cmake --build build -j2}, \code{./build/statarbsim --demo},
+\code{./build/microbench}, then \code{python3
+scripts/analysis/capture\_engine\_bench.py \&\& python3
+scripts/analysis/make\_book\_tables.py \&\& python3
+scripts/plotting/render\_engine\_results.py}.\\
+\textbf{Math used:} Chapter~\ref{ch:systems}.\\
+\textbf{Artifacts:} \code{src/} (all), \code{bench/microbench.cpp},
+\code{results/tables/engine\_\{bench,latency\}.csv},
+\code{results/figures/\{latency\_hist,cache\_bench\}.png},
+\code{report/tables/engine\_\{bench,latency\}.tex}.
+
+\subsection{Goal}
+
+Phase~\ref{ch:phase3} built the engine and measured it once. This phase makes the systems
+side of the project a first-class result: write down the design rationale with the
+cache-line arithmetic behind each choice, re-measure every claim from a live run, make each
+number traceable to a capturing script, and report the multipliers as measured rather than
+as the theory would like.
+
+\subsection{Architecture as shipped}
+\label{sec:arch:principles}
+
+The data flow is a straight causal pipeline, one module per stage, no allocation after
+construction:
+
+\begin{center}
+\small
+\begin{verbatim}
+CSV (data/processed/engine/<T>.csv)
+   |  src/data/csv_loader.h
+   v
+MarketDataBuffer  (SoA ring: ts[], px[], vol[] contiguous)     src/data/market_data_buffer.h
+   |  push bar t-1
+   v
+RollingRegression (rank-1 XtX / Xty accumulators, flat row ring) src/model/rolling_regression.h
+   |  Cholesky (+ lambda I for ridge)                            src/model/dense_la.h
+   |  [alternative estimators: BasketSelector OLS/Ridge/Lasso/EN/PCR, Jacobi eigen]
+   v
+SignalGenerator   (running mean/var -> z, two-band hysteresis)   src/signal/signal_generator.h
+   |  desired direction for bar t+1
+   v
+PortfolioBook     (positions, gross/net exposure, mark-to-market) src/portfolio/portfolio_book.h
+   |  [multi-book layer: risk.h inverse-vol weights + limits]
+   v
+LatencyHist x3    (regression_update, signal_generation, order_placement)
+                  src/engine/latency_hist.h
+\end{verbatim}
+\end{center}
+
+Each design principle is a claim about memory, and each is testable:
+
+\begin{itemize}
+  \item \textbf{Contiguous flat storage, never pointer-chasing containers.} A cache miss
+    fetches a 64-byte line; with contiguous data the line contains 8 useful doubles and the
+    prefetcher streams ahead. \code{std::map}/\code{std::list} would stride through
+    scattered heap lines. \emph{Test:} \code{buffer\_basic\_and\_contiguous}.
+  \item \textbf{Structure-of-Arrays.} Timestamps, prices and volumes live in separate
+    contiguous buffers, so a loop that needs only prices touches one column
+    (Section~\ref{sec:sys:soa}). \emph{Measured:} SoA vs AoS below.
+  \item \textbf{No dynamic allocation on the hot path.} All buffers sized in the
+    constructor; \code{update()} and \code{compute()} write into pre-allocated scratch.
+    \emph{Test:} \code{no\_allocation\_in\_hot\_push\_path} --- a global
+    \code{operator new} counter reads 0 after 1{,}000 windowed updates and solves.
+  \item \textbf{Incremental regression, not refits.} Rank-1 accumulators
+    \eqref{eq:rank1update}: $O(n^2)$ per bar instead of $O(Wn^2)$, with a single small
+    Cholesky solve when coefficients are requested. \emph{Test:} matches brute force to
+    $10^{-8}$ at every window position, and the eviction test proves the right row leaves.
+  \item \textbf{No virtual dispatch on the hot path.} Per-bar units are concrete,
+    header-only, template-friendly classes; an indirect call would cost 2--5\,ns and block
+    inlining --- 10--25\% of the cheapest stage.
+  \item \textbf{Dependency-free linear algebra.} Cholesky + cyclic Jacobi in
+    \code{dense\_la.h}, chosen because Eigen is not installable and not vendable at a
+    reviewable size. \emph{Tests:} $LL^{\top}=A$, ridge inverts a singular system,
+    $V^{\top}AV=\Lambda$, $\mathrm{PCR}(k{=}n)\equiv\mathrm{OLS}$.
+  \item \textbf{Risk primitives as pure functions.} \code{src/portfolio/risk.h} provides
+    inverse-vol weights \eqref{eq:inversevol} and gross/net/concentration limit
+    verification, allocation-free and unit-tested independently of market data, and is
+    consumed by the Phase~\ref{ch:phase7} book.
+\end{itemize}
+
+\subsection{Measured cache microbenchmarks}
+
+\input{tables/engine_bench.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/cache_bench.png}
+\caption{Cache-efficiency microbenchmarks, measured from \code{build/microbench}: the
+rolling-window sweep over a contiguous \code{std::vector} versus a \code{std::deque} at a
+250-bar window, and a Structure-of-Arrays versus Array-of-Structures column reduction over
+$2^{20}$ elements.}
+\label{fig:cache_bench}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{\code{vector} vs \code{deque}} (rolling-window sweep, 250-bar window): the
+    contiguous \code{vector} wins in every build measured, by a ratio that has landed
+    between $\mathbf{1.08\times}$ and $\mathbf{1.33\times}$ across sessions
+    ($1.084\times$, $1.264\times$, $1.333\times$ in three consecutive builds of the same
+    binary on the same data). The live value is in the table above; the honest summary is
+    ``measurably faster, not reliably by how much''.
+  \item \textbf{SoA vs AoS} (column reduction over $2^{20}$ elements): likewise always in
+    favour of SoA, with a ratio observed between $\mathbf{1.03\times}$ and
+    $\mathbf{1.51\times}$ across builds. The absolute cost of the reduction
+    ($\approx1.5$--$2.2$\,ms per pass over 8\,MB / 24\,MB working sets) is dominated by
+    memory traffic, which is exactly why it is the noisiest number in the repository.
+\end{itemize}
+
+\begin{remark}[Honesty: the multipliers are smaller than theory, and unstable]
+Sections~\ref{sec:sys:soa} and \ref{sec:sys:vector} derive upper bounds of $\approx3\times$
+for both comparisons (three times fewer line fetches for SoA; double indirection and broken
+stride for \code{deque}). The measurements fall short of that bound and, worse, are not
+reproducible to better than tens of percent. Three concrete reasons, in order of size:
+\begin{enumerate}
+  \item \textbf{Both working sets partly fit in cache.} At a 250-bar window the
+    \code{deque} blocks and the \code{vector} are both L1/L2-resident, so the penalty is a
+    few cycles of address arithmetic per access, not a DRAM miss. The theory's $3\times$
+    assumes memory-bound streaming, which this microbenchmark does not create.
+  \item \textbf{We do not control the machine.} This is a 2-core shared sandbox with its
+    own neighbours on the same L3 and the same memory controller; a run started while
+    another process is compiling gives a different answer. The spread across builds
+    ($1.03$--$1.51\times$ for SoA/AoS) is larger than the effect being measured in the
+    favourable direction, so the only defensible claim is the sign.
+  \item \textbf{The benefit is architectural, not a single multiplier.} SoA and contiguous
+    storage pay off when the book spans hundreds of baskets (working sets that do
+    \emph{not} fit in cache), when several operations stream the same column, and when the
+    compiler can vectorise --- none of which a two-line microbenchmark exercises.
+\end{enumerate}
+The tables state whatever the last run measured, and the prose states the range across runs.
+Neither is rounded up to ``2--3$\times$, as theory suggests''.
+\end{remark}
+
+\subsection{Measured per-stage latency}
+
+\input{tables/engine_latency.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.82\linewidth]{figures/latency_hist.png}
+\caption{Per-stage latency distribution (p50/p95/p99, ns) of the C++ pipeline over
+30{,}000 synthetic bars, from \code{build/statarbsim --demo}.}
+\label{fig:latency_hist}
+\end{figure}
+
+Reading of Table~\ref{tab:engine_latency}, including its limitations:
+\begin{itemize}
+  \item \textbf{The regression stage dominates}: p50 $\approx0.6\,\mu$s versus
+    $\approx21$\,ns for signal generation and order placement --- a ratio of
+    $\approx25$--$30\times$, stable across builds even though the absolute values are not
+    (an earlier build recorded p50 $\approx518$\,ns and $\approx28$\,ns for the cheap
+    stages). That is where any optimisation effort belongs, and the ratio is consistent
+    with the flop count of Section~\ref{sec:sys:complexity} (the Cholesky plus two rank-1
+    updates plus bookkeeping).
+  \item \textbf{The quantiles are histogram bucket edges, not raw order statistics.} The
+    instrument has 64 logarithmically spaced buckets over
+    $[10\,\text{ns},100\,\mu\text{s}]$, so each bucket spans a factor
+    $10^{4/63}=1.158$, and the reported quantile is the \emph{lower edge} of the bucket
+    containing it. $599.5$\,ns is such an edge (the next is $694$\,ns, then $804$\,ns,
+    $931$\,ns, $1078$\,ns). Two consequences follow, and both have been observed: when the
+    distribution is tight, p50, p95 and p99 all report the \emph{same} edge (an earlier
+    build printed $599.5$ for all three, which is a resolution artifact, not a degenerate
+    distribution); when it is not, they step up the ladder of edges, as in the build that
+    produced the table above ($599.5 / 1075.8 / 2234.6$\,ns). The mean, which is computed
+    from the raw samples and not from the histogram, lies above the p50 edge in every build
+    ($660$--$766$\,ns observed) --- confirming mass spread through and beyond it. Reporting
+    bucket edges rather than inventing intermediate values is the honest convention;
+    tightening the range to $[100\,\text{ns},10\,\mu\text{s}]$ would resolve the tail and is
+    listed as a small improvement in Chapter~\ref{ch:conclusion}.
+  \item \textbf{The two cheap stages are at the measurement floor.} \code{chrono} reads cost
+    $\approx$20--25\,ns via the vDSO, and both stages report $\approx20.8$\,ns --- i.e.\ we
+    are measuring the instrument as much as the work. This is disclosed rather than
+    presented as ``21\,ns signal generation''.
+\end{itemize}
+
+\subsection{Traceability: how every systems number reaches the page}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{p{0.30\linewidth}p{0.32\linewidth}p{0.30\linewidth}}
+\toprule
+Number & Produced by & Lands in \\
+\midrule
+p50/p95/p99 per stage, mean & \code{./build/statarbsim --demo} $\to$ \code{scripts/analysis/capture\_engine\_bench.py} & \code{results/tables/engine\_latency.csv} $\to$ \code{report/tables/engine\_latency.tex}, \code{figures/latency\_hist.png} \\
+\code{vector} vs \code{deque}, SoA vs AoS & \code{./build/microbench} $\to$ same capturing script & \code{results/tables/engine\_bench.csv} $\to$ \code{report/tables/engine\_bench.tex}, \code{figures/cache\_bench.png} \\
+Test counts and assertions & \code{./build/statarbsim --test} & \code{environment/check.sh} gate \\
+Allocation-free property & \code{test\_no\_allocation\_in\_hot\_push\_path} & same \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Nothing in this chapter's tables is typed by hand, and the whole set is re-measured on
+every \code{python3 report/build\_report.py}. That has a visible consequence: the numbers
+move between runs, sometimes a lot (the regression p50 has been measured at $518$\,ns and
+at $599.5$\,ns; the \code{deque} ratio at $1.084\times$, $1.264\times$ and $1.333\times$;
+the SoA/AoS ratio at $1.033\times$ and $1.509\times$). The prose above therefore quotes
+ranges and mechanisms, and leaves the point estimates to the generated tables, which always
+show the most recent run. Reporting the live values rather than the remembered ones is the
+point of the rule --- even when, as here, the live values are noisier and less flattering
+than an earlier session's.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] \code{vector} vs \code{deque} and SoA vs AoS microbenchmarks generated
+    from real runs;
+  \item[\checkmark] latency histograms (p50/p95/p99) plotted from a live
+    \code{--demo} run, with the resolution limitation stated;
+  \item[\checkmark] design rationale written with the cache-line arithmetic, not asserted;
+  \item[\checkmark] every benchmark number traceable to a capturing script and a CSV;
+  \item[\checkmark] the C++ test suite (24 tests, 2{,}852 assertions) and \code{check.sh}
+    (52/52) green.
+\end{itemize}

@@ -1,0 +1,75 @@
+% =============================================================================
+%  CHAPTER 26 -- SYNTHESIS OF RESULTS
+% =============================================================================
+\section{Synthesis: every result on one page}
+\label{ch:synthesis}
+
+This chapter collects the project's findings in one place, each with its number, its
+source, and its statistical status. It is the chapter to read if you read nothing else.
+
+\subsection{The evidence that the structure is real}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{p{0.29\linewidth}p{0.20\linewidth}p{0.22\linewidth}p{0.19\linewidth}}
+\toprule
+Claim & Number & Source & Status \\
+\midrule
+The traded (rolling-hedge) spread is stationary & ADF $-9.948$, $p<10^{-3}$ (full); $-5.971$, $p<10^{-3}$ (2022+) & Table~\ref{tab:diag_stationarity} & \textbf{strong}; a property of a series, not of a searched maximum \\
+It reverts on a tradeable timescale & OU half-life $9.36$--$9.44$ bars & Table~\ref{tab:diag_stationarity} & \textbf{strong}; estimator validated to $0.9\%$ on known-truth data \\
+The holding period matches the half-life & $16.2$--$17.3$ bars $=1.7$--$1.9\,\tau_{1/2}$, capturing $\approx70$--$72\%$ of the reversion & \eqref{eq:ou:gain}, Table~\ref{tab:diag_stationarity} & \textbf{consistent} with the theory of Chapter~\ref{ch:ou} \\
+The basket is cointegrated at the system level & Johansen rank $r=2$ at 95\% & Table~\ref{tab:diag_coint} & \textbf{supported}, though our spread is not shown to be one of the two vectors \\
+Two of three hedge weights are individually significant & HAC $t=7.29$ (\code{CRM}), $9.42$ (\code{ADSK}); $0.45$ (\code{INTU}) & Table~\ref{tab:diag_coint} & \textbf{strong} under correct inference; classic $t$ were $29.5$/$29.7$/$1.5$ \\
+The signal predicts direction out of sample & OOS IC $0.125$--$0.211$ (2022+), positive for all 5 estimators & Table~\ref{tab:model_compare}, Fig.~\ref{fig:mc_ic} & \textbf{supported but small}; se(IC) $\approx0.13$ on overlapping windows \\
+A static hedge does \emph{not} work & ADF $p=0.083$, half-life $171$ bars & Table~\ref{tab:diag_stationarity} & \textbf{strong negative}; motivates adaptive estimation \\
+Linear beats nonlinear out of sample & linear IC $0.243$--$0.423$ vs GBM $0.173$--$0.366$; linear is the only positive OOS $R^2$ & Table~\ref{tab:nonlinear_forecast} & \textbf{consistent} across 4 baskets and explained by the learning curve \\
+The linear form is not misspecified on the main basket & RESET $p=0.376$ (\code{ADBE}); rejected on the other three & Table~\ref{tab:nonlinear_reset} & \textbf{mixed}, and the rejections are not exploitable \\
+Smooth hedges beat churny hedges net of cost & Kalman $q{=}10^{-5}$: net SR $+0.113$ on 61 trades vs rolling OLS $W{=}120$: $+0.050$ on 198 & Table~\ref{tab:kalman_compare} & \textbf{directionally clear, statistically invisible} (DM $p=0.68$) \\
+Fewer, better-separated trades are better & net SR $+0.050$ at $(W{=}120,z{=}2.0)$ $\to+0.206$ at $(W{=}180,z{=}3.0)$ & \code{portfolio\_heat\_ez.csv}, Fig.~\ref{fig:portfolio_heat_ez} & \textbf{predicted in advance} by \eqref{eq:costdrag}, \eqref{eq:ou:profit}; found by a search \\
+Risk engineering cuts tails & MaxDD $0.846\to0.384$; VaR$_{95}$ $0.00409\to0.00389$; CVaR$_{95}$ $0.00681\to0.00628$ (inverse-vol vs equal) & Table~\ref{tab:portfolio_summary} & \textbf{measured and enforced}, verified on every rebalance \\
+The engine is fast and provably correct & $600$\,ns regression stage; $21$\,ns signal/order; 0 allocations in 1{,}000 updates; incremental $=$ brute force to $10^{-8}$; 24 tests / 2{,}852 checks & Tables~\ref{tab:engine_latency}, \ref{tab:engine_bench} & \textbf{measured}, with the histogram-resolution caveat stated \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The evidence that the magnitude is not established}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{p{0.34\linewidth}p{0.28\linewidth}p{0.28\linewidth}}
+\toprule
+Question & Answer & Source \\
+\midrule
+Does the single-basket baseline beat costs? & Gross SR $0.385\to$ net $0.050$ at 10\,bps; break-even one-way cost $\approx11$\,bps; costs consume $87\%$ of the gross return & Table~\ref{tab:backtest_base}, Fig.~\ref{fig:cost_sensitivity} \\
+Does the four-strategy book make money? & \textbf{No}: net SR $-0.401$ (inverse-vol), $-0.463$ (equal weight); 3 of 4 legs individually negative & Table~\ref{tab:portfolio_summary} \\
+Does any variant survive Bonferroni over $M=44$? & \textbf{No}: best raw $p=0.0587$, bar $0.001136$, adjusted $p=1.0$, survivors $0$ & Table~\ref{tab:multtest_corrections} \\
+Do the bootstrap data-snooping tests find anything? & \textbf{No}: White RC $p=0.868$, Hansen SPA $p=0.638$ & same \\
+Is the best Sharpe better than selection noise? & \textbf{No}: $\mathrm{SR}_0=0.474$ expected under the null, best observed $0.346$, $\mathrm{DSR}=0.305$ & Table~\ref{tab:power_dsr} \\
+Is the best strategy's Sharpe positive with confidence? & \textbf{No}: bootstrap 95\% CI $[-0.058,\ +0.753]$ & same \\
+Is any pairwise hedge difference significant? & \textbf{No}: all 10 DM $p$-values $\in[0.22,0.96]$, every CI spans zero & Table~\ref{tab:multtest_dm}, Fig.~\ref{fig:multtest_forest} \\
+Could more data fix this? & Not at this design: $22.6$ years needed uncorrected, $77.8$ corrected (best of 44); $366$ / $1{,}259$ years for the best \code{ADBE} variant & Table~\ref{tab:power_dsr} \\
+What is the standard error of the headline Sharpe? & $\approx0.245$ annualised over 4{,}190 bars --- about five times the $0.050$ estimate itself & \eqref{eq:sharpevar} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The one-paragraph version}
+
+On a real 195-name, 16.7-year total-return panel, an adaptively estimated basket spread
+does what statistical arbitrage theory says it should: it is stationary when the hedge is
+rolled forward (ADF $p<10^{-3}$) and non-stationary when the hedge is fixed for sixteen
+years ($p=0.083$); it reverts with a half-life of $\approx9.4$ bars; the strategy holds
+$\approx1.8$ half-lives and captures $\approx70\%$ of the reversion; its standardized form
+predicts the direction of convergence out of sample with IC $0.13$--$0.21$; shrinkage and
+recursive smoothing improve the \emph{net} result by cutting turnover rather than by
+finding more signal; and flexible nonlinear models lose to the regularized linear map
+because the sample is too small for their variance. All of that is real, reproducible, and
+mechanistically explained. And all of it is worth, net of 10\,bps per side, a Sharpe of
+$0.05$--$0.11$ on the best single basket and $-0.40$ on the four-basket book --- numbers
+whose own standard error is five times their size, that fail an uncorrected 5\% test at the
+best of 44 tries ($p=0.059$), that survive no data-snooping correction
+(Bonferroni 0 survivors; RC $p=0.868$; SPA $p=0.638$; DSR $0.305$), and that would require
+23--78 years (best of 44) or 366--1{,}259 years (best \code{ADBE} variant) of daily data to
+confirm. The structure is a finding; the magnitude is not.

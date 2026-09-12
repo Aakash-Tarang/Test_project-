@@ -1,0 +1,198 @@
+% =============================================================================
+%  CHAPTER 21 -- PHASE 8: KALMAN-FILTERED TIME-VARYING HEDGE
+% =============================================================================
+\section{Phase 8 --- Kalman-filtered time-varying hedge}
+\label{ch:phase8}
+
+\textbf{Reproduce it:} \code{python3 scripts/test\_kalman.py} (validation), then
+\code{python3 scripts/analysis/compare\_kalman.py \&\& python3
+scripts/plotting/render\_kalman.py}.\\
+\textbf{Math used:} all of Chapter~\ref{ch:kalman}.\\
+\textbf{Artifacts:} \code{scripts/model/kalman.py}, \code{scripts/test\_kalman.py},
+\code{results/tables/kalman\_summary.csv},
+\code{results/figures/kalman\_\{sharpe,beta\}.png}, \code{report/tables/kalman.tex}.
+
+\subsection{Goal}
+
+Replace the fixed-window refit with genuine adaptive estimation and ask whether it
+improves the \emph{traded, net-of-cost} result --- not merely the fit. Phase~\ref{ch:phase6}
+had already shown that the relationship drifts (the static hedge fails the ADF test while
+the rolling one passes), so the question was not whether adaptation is needed but which
+kind pays.
+
+\subsection{What was built}
+
+\code{scripts/model/kalman.py} implements the local-level state-space model
+\eqref{eq:kalman:state}--\eqref{eq:kalman:obs} with state $=[\alpha_t,\beta_{1,t},\dots,
+\beta_{k,t}]^{\top}$ (here $d=4$ for the three-name basket, $d=2$ for the two-name
+baskets) and design row $z_t=[1,x_t^{\top}]$. The recursion is the standard
+predict/update of Chapter~\ref{ch:kalman}:
+\begin{align*}
+  \text{predict:}\quad & \beta_{t\mid t-1}=\beta_{t-1},\quad P_{t\mid t-1}=P_{t-1}+Q,\\
+  \text{innovate:}\quad & v_t = y_t - z_t^{\top}\beta_{t\mid t-1},\quad
+  S_t = z_t^{\top}P_{t\mid t-1}z_t + R,\\
+  \text{update:}\quad & K_t = P_{t\mid t-1}z_t/S_t,\quad
+  \beta_t = \beta_{t\mid t-1} + K_t v_t,\quad
+  P_t = (I-K_tz_t^{\top})P_{t\mid t-1}(I-K_tz_t^{\top})^{\top} + K_tRK_t^{\top}.
+\end{align*}
+The covariance update is in \emph{Joseph form} \eqref{eq:joseph} for the numerical reason
+given in Section~\ref{sec:kalman:joseph}.
+
+Three design choices worth recording:
+\begin{itemize}
+  \item \textbf{The signal is the standardised innovation} $z^{\text{spread}}_t=v_t/\sqrt{S_t}$
+    \eqref{eq:kalman:signal}, which is $N(0,1)$ under the model, so the $2.0/0.5$ bands
+    carry a known probabilistic meaning rather than an empirical one.
+  \item \textbf{No-lookahead by construction}: the state that scores bar $t$ is the
+    \emph{predictive} $\beta_{t\mid t-1}$, which depends only on bars $\le t-1$. Bar $t$
+    is fed into the update only after the signal has been recorded. This is the same
+    timing as the rolling window ending at $t-1$, so the two hedges are directly
+    comparable in one pipeline.
+  \item \textbf{One hyper-parameter.} $R$ is the warm-up (120-bar) OLS residual variance
+    and $P_0=R(A_0^{\top}A_0)^{-1}$ is the warm-up OLS posterior covariance; the state
+    noise is $Q_{ii}=q^2R$ for a single dimensionless dial $q$, swept over
+    $\{10^{-5},10^{-4},10^{-3},10^{-2},10^{-1}\}$. One dial means one hypothesis to count
+    in Chapter~\ref{ch:multipletesting}, which is a genuine methodological advantage over
+    a multi-parameter adaptive scheme.
+\end{itemize}
+The module's output API is deliberately identical to
+\code{baseline\_models.walk\_forward} (\code{\{z, beta, intercept\}}), so the Kalman hedge
+drops into the same \code{simulate} call and inherits the same cost model, execution
+delay, and sizing. That is what makes the comparison an experiment.
+
+\subsection{Synthetic validation first}
+
+\code{scripts/test\_kalman.py} runs before any real-data claim, on data where the truth is
+known:
+\begin{itemize}
+  \item \textbf{Tracking error.} With betas that drift smoothly, the filtered
+    $\hat\beta_t$ tracks the truth with RMSE $\mathbf{0.73}$ versus $\mathbf{3.37}$ for a
+    fixed full-sample OLS beta --- a $4.6\times$ improvement, which is the quantitative
+    version of ``the relationship drifts, so a fixed hedge is wrong''.
+  \item \textbf{No-lookahead.} Perturbing future bars leaves $\beta_{t\mid t-1}$
+    bit-identical; the test fails if the recursion is ever reordered to update before
+    scoring.
+  \item \textbf{The filtered spread is the right kind of object.} ADF rejects a unit root
+    in the filtered residual ($p<10^{-3}$) with an OU half-life of $\approx8$ bars --- so
+    the Kalman spread is stationary and mean-reverting on the same scale as the rolling one
+    ($9.4$ bars, Phase~\ref{ch:phase6}), and the two are comparable as trading objects.
+\end{itemize}
+
+\subsection{Real-data results}
+
+\input{tables/kalman.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.92\linewidth]{figures/kalman_sharpe.png}
+\caption{Net-of-cost Sharpe (full sample and 2022+ test) for the Kalman state-noise sweep
+and the rolling OLS/Ridge hedges on the \code{ADBE} basket at 10\,bps one-way. Net Sharpe
+is maximised at \emph{low} $q$ --- the smoothest hedge --- while the Gaussian likelihood is
+maximised at high $q$.}
+\label{fig:kalman_sharpe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/kalman_beta.png}
+\caption{Kalman-filtered hedge weight on \code{CRM} versus the causal rolling-OLS-120
+weight. The filtered path is visibly smoother: the window refit jumps whenever a large
+observation enters or leaves the window, while the filter moves by $K_t v_t$ per bar.}
+\label{fig:kalman_beta}
+\end{figure}
+
+Table~\ref{tab:kalman_compare} is the generated record; the curated extract below is the
+same data (net of 10\,bps one-way, \code{ADBE} basket):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Hedge & Gross SR (full) & Net SR (full) & Net SR (2022+) & Ann.\ net (2022+) & Round trips \\
+\midrule
+Rolling OLS $W{=}60$  & $0.704$ & $+0.076$ & $+0.518$ & $+4.55\%$ & 362 \\
+Rolling OLS $W{=}120$ & $0.388$ & $+0.050$ & $-0.302$ & $-2.67\%$ & 198 \\
+Rolling OLS $W{=}180$ & $0.164$ & $-0.080$ & $-0.527$ & $-4.54\%$ & 133 \\
+Rolling Ridge $W{=}120,\alpha{=}10$ & $0.339$ & $+0.093$ & $-0.031$ & $-0.33\%$ & 165 \\
+\midrule
+Kalman $q=10^{-5}$ & $0.195$ & $\mathbf{+0.113}$ & $\mathbf{+0.111}$ & $+1.28\%$ & $\mathbf{61}$ \\
+Kalman $q=10^{-4}$ & $0.187$ & $+0.105$ & $+0.088$ & $+1.00\%$ & 61 \\
+Kalman $q=10^{-3}$ & $-0.013$ & $-0.091$ & $-0.257$ & $-2.97\%$ & 62 \\
+Kalman $q=10^{-2}$ & $0.093$ & $-0.042$ & $-0.932$ & $-5.00\%$ & 54 \\
+Kalman $q=10^{-1}$ & $0.040$ & $-0.114$ & $0.000$ & $0.00\%$ & 2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Findings}
+
+\begin{enumerate}[label=\textbf{K\arabic*.}]
+  \item \textbf{A smooth, low-turnover hedge is the adaptive win --- and it wins on cost,
+    not on signal.} The best net Sharpe of anything tested in this project on the
+    \code{ADBE} basket is Kalman $q=10^{-5}$ at $+0.113$ full sample, above rolling Ridge
+    ($+0.093$) and rolling OLS ($+0.050$ to $+0.076$). Its \emph{gross} Sharpe
+    ($0.195$) is \emph{lower} than every windowed OLS variant. So the improvement comes
+    entirely from the cost side: 61 round trips versus 198--362, i.e.\ a $3$--$6\times$
+    reduction in turnover, which by \eqref{eq:costdrag} removes most of the drag that
+    Phase~\ref{ch:phase4} measured at $87\%$ of gross return. Because the
+    \code{ADBE}--basket relationship is fairly stable over sixteen years, the recursive
+    filter adds value by \emph{not} churning the hedge every bar the way a refit window
+    does.
+  \item \textbf{Adaptation is not monotone: over-tracking destroys the spread.} Raising
+    $q$ so the filter follows the levels faster --- which \emph{maximises the Gaussian fit
+    likelihood on the training data} --- makes the residual whiter and removes the
+    persistent deviation that is the tradable mispricing. Net Sharpe falls from $+0.113$ at
+    $q=10^{-5}$ to $-0.042$ at $q=10^{-2}$ and $-0.114$ at $q=10^{-1}$ (where the filter
+    tracks so closely that the threshold policy fires twice in sixteen years). This is the
+    state-space echo of the Phase~\ref{ch:phase6} finding that the \emph{causal rolling}
+    spread, not a fast-tracking fit, is the stationary tradeable object, and it is the
+    cleanest illustration in the whole project of the bias--variance trade
+    \eqref{eq:biasvariance} operating on the \emph{signal} rather than on the fit: a filter
+    with zero bias against the data has no predictable residual left to trade.
+  \item \textbf{Robustness on 2022+ is a real advantage, but the selection rule fails.}
+    Low-$q$ Kalman stays net-positive out of sample on 2022+ ($+0.088$ to $+0.111$) while
+    the default-window OLS/Ridge hedges are net-negative there ($-0.031$ to $-0.527$);
+    only the very short rolling OLS $W{=}60$ does better ($+0.518$), and it pays for that
+    with 362 round trips and a full-sample net Sharpe of only $+0.076$. But: choosing $q$
+    on the 2019--2021 validation window by net Sharpe selects $q=10^{-3}$, which then
+    performs \emph{badly} out of sample ($-0.257$). The smooth limit $q=10^{-5}$ was
+    chosen by the reasoning of Section~\ref{sec:kalman:steady}, not by the validation rule.
+    Reporting that the mechanical selection rule failed is more informative than reporting
+    the best cell --- and it is a concrete instance of the general lesson that with a weak
+    signal, hyper-parameter selection on a three-year window is mostly noise.
+\end{enumerate}
+
+\subsection{Why the low-$q$ result is the theoretically expected one}
+
+Section~\ref{sec:kalman:steady} derived that at steady state the filter is an EWMA with
+decay $1-K^\ast$ and effective memory $1/K^\ast$ bars, where $K^\ast$ depends only on
+$Q/R=q^2$. At $q=10^{-5}$, $K^\ast$ is tiny and the hedge is nearly constant with an
+effective memory of thousands of bars --- longer than the sample. At $q=10^{-2}$, $K^\ast$
+is order $10^{-1}$--$1$ and the memory is a few bars, shorter than the $9.4$-bar half-life
+of the spread, so the filter absorbs the mispricing into the hedge instead of leaving it
+in the residual. The crossover is therefore predictable in advance: \emph{the hedge should
+adapt on a timescale longer than the reversion it is trying to measure}, or it will
+measure nothing. The sweep confirms the prediction, and the prediction is what makes the
+result a finding rather than a lucky cell.
+
+\subsection{The C++ port, deferred and documented}
+
+The Kalman recursion costs $\le250$ flops per bar at $d\le5$ (Section~\ref{sec:kalman:cost}),
+which is well below the measured $\approx600$\,ns regression stage of the existing engine.
+It is kept as a dependency-free Python reference in the research layer; porting it into
+\code{src/model/} is straightforward (the Joseph-form update is $O(d^3)$ with no
+allocation once $P$, $Q$, $K$ are pre-allocated) and is listed as future work in
+Chapter~\ref{ch:conclusion}. The deferral is an explicit allocation of effort: the C++ engine
+exists to make large-scale \emph{simulation} fast and provably correct, and a per-bar
+250-flop recursion in Python changes no conclusion in this book.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] Kalman filter implemented and validated on synthetic data with a known
+    drifting truth (RMSE $0.73$ vs $3.37$ for a fixed beta);
+  \item[\checkmark] no-lookahead verified by perturbation test;
+  \item[\checkmark] compared to rolling OLS and rolling Ridge through one identical
+    cost-aware pipeline, with tracking error and OOS metrics;
+  \item[\checkmark] report section written from the generated table and figures, including
+    the failed validation selection.
+\end{itemize}

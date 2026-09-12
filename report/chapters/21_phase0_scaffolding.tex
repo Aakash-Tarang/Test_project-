@@ -1,0 +1,103 @@
+% =============================================================================
+%  CHAPTER 13 -- PHASE 0: PLAN, ENVIRONMENT RECONNAISSANCE, SCAFFOLDING
+% =============================================================================
+\section{Phase 0 --- Plan, environment reconnaissance, scaffolding}
+\label{ch:phase0}
+
+\subsection{Goal}
+
+Before writing any research code, establish three things: what the project must deliver,
+what the machine can actually do, and where the artifacts go. Phase 0 produced
+\code{PLAN.md} (the 13-phase plan with per-phase exit gates), \code{environment/}
+(\code{setup.sh}, \code{check.sh}, \code{env\_map.md}, \code{data\_candidates.md}), the
+directory skeleton, and the report skeleton.
+
+\subsection{Why an environment-reconnaissance phase is not bureaucracy}
+
+The specification assumed things that turned out to be false in this sandbox, and each
+falsity would have cost a wasted phase if discovered late:
+\begin{itemize}
+  \item \textbf{``Download daily data from Yahoo/stooq''} --- all market-data endpoints
+    are blocked at runtime. Only PyPI and GitHub are reachable. This single discovery
+    changed the entire data strategy: the primary panel had to be downloaded on an
+    internet-enabled machine and committed as raw CSVs
+    (\code{data/raw/yfinance/*.csv}), and a secondary GitHub-hosted dataset had to be
+    wired in as the in-sandbox fallback (\code{--source github}).
+  \item \textbf{``Compile the LaTeX report to PDF''} --- no TeX engine is installable
+    (no apt, no conda). Hence the two-track build described in
+    Section~\ref{sec:phasemap:env}: canonical \code{.tex} plus a self-contained HTML
+    preview with locally rasterised mathematics.
+  \item \textbf{``Use Eigen''} --- not installable and too large to vendor. Hence the
+    hand-rolled dense linear algebra of Section~\ref{sec:pca:jacobi}.
+  \item \textbf{``\code{pip install} works''} --- the environment is PEP-668
+    externally-managed, so every install needs \code{--user --break-system-packages}, and
+    user-level scripts land in \code{\$HOME/.local/bin}, which is not on \code{PATH} by
+    default (hence the \code{export PATH} line in every reproduction recipe).
+\end{itemize}
+Reconnaissance is therefore the highest-leverage hour in the project: it converted four
+would-be mid-project crises into four documented design decisions.
+
+\subsection{What was built}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{0.24\linewidth}p{0.70\linewidth}}
+\toprule
+Artifact & Content \\
+\midrule
+\code{PLAN.md} & the 13 phases, each with a goal, deliverables and a hard exit gate; the cross-cutting rules R1--R7 of Section~\ref{sec:phasemap:rules}; the environment table \\
+\code{environment/setup.sh} & idempotent bootstrap: installs the scientific stack and \code{cmake} user-level, verifies \code{g++}/\code{make} \\
+\code{environment/check.sh} & the exit gate as an executable script: 52 checks covering toolchain, imports, C++ build and tests, report build, and every phase's artifacts, ending in ``$N$ passed, $M$ failed'' and a non-zero exit on failure \\
+\code{environment/env\_map.md} & the empirically verified resource map (network reachability, CPU/RAM, missing tools) \\
+\code{environment/data\_candidates.md} & candidate GitHub-hosted datasets with pros/cons, so the Phase 1 choice was made from a written comparison rather than a whim \\
+directory skeleton & \code{scripts/\{data,model,analysis,plotting\}}, \code{src/\{data,model,signal,portfolio,engine\}}, \code{test/}, \code{bench/}, \code{report/}, \code{data/\{raw,processed,manifest\}}, \code{results/\{tables,figures,metrics,backtests\}} \\
+\code{.gitignore} & the provenance discipline made mechanical: ignore \code{data/processed}, \code{results/*}, \code{build/}, \code{report/tables}, \code{report/figures}, \code{report.html}, \code{report.pdf} \\
+report skeleton & \code{report.tex} with all sections present but marked ``filled in Part $n$'', plus \code{build\_report.py} and \code{references.bib} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Two design decisions taken in Phase 0 that shaped everything later}
+
+\paragraph{(1) The exit gate is executable.} \code{environment/check.sh} is not a
+checklist in prose; it is a script that fails. It builds the C++ engine, runs the C++
+test suite, runs the Python test suites, runs every capture script, and then asserts the
+existence of every artifact the report references --- including two \emph{honesty gates},
+which are the most unusual lines in the repository:
+\begin{itemize}
+  \item it reads \code{results/tables/nonlinear\_trading.csv} and \emph{fails} if the
+    nonlinear gate's net Sharpe exceeds the linear baseline's --- i.e.\ the build refuses
+    to pass if a future edit lets a nonlinear model outclaim the baseline;
+  \item it reads \code{results/tables/multtest\_corrections.csv} and \emph{fails} unless
+    $0$ strategies survive Bonferroni \emph{and} White RC $p\ge0.05$ \emph{and} Hansen
+    SPA $p\ge0.05$ --- i.e.\ the build refuses to pass if the data-snooping correction
+    suddenly starts ``succeeding''.
+\end{itemize}
+These gates encode the project's central honest finding as a regression test. Current
+status: \textbf{52 passed, 0 failed}.
+
+\paragraph{(2) The report is built from results, never typed.}
+\code{report/build\_report.py} runs the capture-then-render pipeline before producing any
+output. The consequence is that the report cannot drift from the code: if a number in the
+text disagrees with the regenerated table next to it, the discrepancy is visible on the
+page. Phase~\ref{ch:phase12} extends this to the book you are reading.
+
+\subsection{Honest reading}
+
+Phase 0 produced no research results, and that is the point. Its measurable output is the
+difference between the plan's assumptions and the machine's reality, recorded in
+\code{environment/env\_map.md}, plus a gate script that has caught every regression since.
+One thing Phase 0 got wrong and later phases had to absorb: the data plan assumed
+$\ge200$ names would be obtainable in-sandbox. They were not (Section~\ref{sec:phase1:universe});
+the shortfall to 195 is disclosed rather than patched.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] master plan written with per-phase exit gates;
+  \item[\checkmark] environment empirically verified and documented;
+  \item[\checkmark] scaffolding committed, with \code{.gitkeep} placeholders so the
+    ignored trees survive a fresh clone;
+  \item[\checkmark] report skeleton + build driver present and running;
+  \item[\checkmark] \code{check.sh} green.
+\end{itemize}

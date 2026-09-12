@@ -1,0 +1,189 @@
+% =============================================================================
+%  CHAPTER 19 -- PHASE 6: STATISTICAL DIAGNOSTICS ON THE TRADED RESIDUALS
+% =============================================================================
+\section{Phase 6 --- Statistical diagnostics on the traded residuals}
+\label{ch:phase6}
+
+\textbf{Reproduce it:} \code{python3 scripts/analysis/run\_diagnostics.py \&\& python3
+scripts/plotting/render\_diagnostics.py}.\\
+\textbf{Math used:} all of Chapters~\ref{ch:timeseries} and \ref{ch:ou}.\\
+\textbf{Artifacts:} \code{results/tables/diagnostics\_\{summary,coint,halflife,multtest\}.csv},
+\code{results/tables/spread\_residuals.csv},
+\code{results/figures/diagnostics\_\{residual,halflife\}.png},
+\code{report/tables/diagnostics.tex}.
+
+\subsection{Goal}
+
+Run the entire diagnostic battery on the residuals the strategy actually trades, and
+report what it says even where it is uncomfortable. Four questions, in order of
+importance:
+\begin{enumerate}
+  \item Is the spread stationary, or is the whole exercise a spurious regression
+    (Section~\ref{sec:prob:spurious})?
+  \item Are the target and basket genuinely cointegrated, and are the hedge weights
+    significant under correct inference?
+  \item How fast does the spread revert, and does that match the strategy's holding
+    period?
+  \item How much of the apparent significance disappears once autocorrelation and
+    heteroskedasticity are accounted for?
+\end{enumerate}
+
+\subsection{Design: two residuals, two periods}
+
+Every test is run on \emph{two} different objects, and the distinction is the most
+important methodological point of the phase:
+
+\begin{description}[leftmargin=0pt,style=nextline]
+  \item[Static hedge] one OLS (and one Ridge) fit of the log-price relation over the whole
+    period --- the object that ``is ADBE cointegrated with its peers?'' refers to, and the
+    residual that Engle--Granger and Johansen are designed for.
+  \item[Rolling causal spread] the 120-bar walk-forward hedge residual
+    $S_t$ of \eqref{eq:saa:spread} --- the object the strategy \emph{actually trades},
+    written to \code{results/tables/spread\_residuals.csv} bar by bar so the diagnostics
+    and the backtest are provably about the same series.
+\end{description}
+
+Both are tested over the full sample (2010--2026, $n=4{,}070$ usable bars after warm-up)
+and over the out-of-sample test period (2022+, $n=1{,}169$). Reporting only one of the
+two would have produced a completely different --- and misleading --- story.
+
+\subsection{Results: the stationarity battery}
+
+\input{tables/diagnostics.tex}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.95\linewidth]{figures/diagnostics_residual.png}
+\caption{The causal rolling spread actually traded (top) and its autocorrelation function
+(bottom). The ACF decays toward the $\pm1.96/\sqrt T$ band by roughly lag 10--20,
+consistent with the estimated OU half-life of $\approx9.4$ bars
+(equation~\eqref{eq:ar1}: an AR(1)-type decay with $\phi=e^{-\theta}=0.928$ has
+$\rho(10)=0.47$, $\rho(20)=0.22$).}
+\label{fig:diag_residual}
+\end{figure}
+
+The measured verdicts (Table~\ref{tab:diag_stationarity}):
+
+\begin{enumerate}[label=\textbf{D\arabic*.}]
+  \item \textbf{The static long-run hedge is \emph{not} a clean cointegrating residual.}
+    Over 2010--2026 the fixed OLS hedge residual gives ADF $-2.651$ with $p=0.083$ (fails
+    to reject the unit root), KPSS $1.357$ with $p=0.01$ (rejects level-stationarity) ---
+    both tests pointing the same way --- and an implied OU half-life of $170.8$ bars. On
+    2022+ it is worse: ADF $p=0.845$, half-life $475.5$ bars. Ridge is nearly identical
+    ($p=0.093$, half-life $178.1$ bars full sample). A single hedge ratio estimated once
+    over sixteen years cannot pin Adobe to its peers; the relationship drifts.
+  \item \textbf{The causal rolling spread \emph{is} mean-reverting.} ADF $-9.948$,
+    $p<10^{-3}$ (full sample) and $-5.971$, $p<10^{-3}$ (2022+) --- decisive rejections of
+    the unit root, with an OU half-life of $9.36$ bars full sample and $9.44$ bars on
+    2022+, i.e.\ stable across regimes. KPSS, however, rejects level-stationarity on the
+    full sample ($p=0.01$) and does not reject on 2022+ ($p=0.10$), so the joint verdict
+    is \emph{ambiguous} full sample and \emph{stationary} on the test period. The
+    ambiguity is informative rather than inconvenient: it is the signature of a process
+    that reverts quickly toward a local mean that itself moves --- exactly what a rolling
+    hedge produces, and exactly why the $z$-score of \eqref{eq:saa:z} uses a trailing
+    $\hat\mu_{S,t}$ rather than a full-sample one.
+  \item \textbf{Extreme serial correlation and strong heteroskedasticity, everywhere.}
+    Durbin--Watson $=0.009$ (static) and $0.147$ (rolling), i.e.\ implied
+    $\hat\rho_1\approx0.995$ and $0.93$ by \eqref{eq:dw:rho}; Ljung--Box $Q=38{,}379$ and
+    $20{,}725$ with $p\approx0$; Breusch--Pagan and White both $p<10^{-3}$. For the
+    static residual, DW$\approx0.01$ is the textbook signature of a \emph{unit-root}
+    residual (successive values nearly identical). For the rolling residual it is the
+    signature of the persistent mispricing we intend to trade. Both are the same
+    statistic; the interpretation depends entirely on which object you are looking at ---
+    which is why the two-residual design matters.
+  \item \textbf{The consequence for inference is a factor of 3--4 in $t$-statistics.}
+    Table~\ref{tab:diag_coint}: the classic (i.i.d.) $t$ for the \code{CRM} hedge weight
+    is $29.52$ and the Newey--West HAC $t$ is $7.29$; for \code{ADSK}, $29.69\to9.42$; for
+    the intercept, $-44.95\to-12.27$. Naive inference overstates significance by
+    $\approx4\times$ in $t$ and $\approx16\times$ in variance terms --- the
+    $1+2\sum_\ell\rho(\ell)$ inflation factor of \eqref{eq:longrunvar} with
+    $\rho(\ell)\approx0.99^\ell$. Every significance claim in this report is made on HAC
+    standard errors, never on the classic ones.
+\end{enumerate}
+
+\subsection{Results: cointegration and hedge significance}
+
+\begin{itemize}
+  \item \textbf{Engle--Granger, name by name} (target \code{ADBE} against each peer
+    individually): \code{CRM} $p=0.0032$ and \code{ADSK} $p=0.0325$ are cointegrated at
+    5\%; \code{INTU} $p=0.1165$ is not.
+  \item \textbf{Johansen on the four-name log-price vector}
+    $(\text{ADBE},\text{CRM},\text{ADSK},\text{INTU})$: cointegration rank
+    $\mathbf{r=2}$ at the 95\% level (trace statistic, \eqref{eq:johansen:trace}). So the
+    basket does share two independent stationary combinations --- it is genuinely
+    cointegrated at the system level, not merely highly correlated.
+  \item \textbf{Hedge weights under HAC inference} (Table~\ref{tab:diag_coint}):
+    $\hat\beta_{\text{CRM}}=0.649$ ($t=7.29$), $\hat\beta_{\text{ADSK}}=0.600$
+    ($t=9.42$), $\hat\beta_{\text{INTU}}=0.027$ ($t=0.45$), intercept $-0.898$
+    ($t=-12.27$). The hedge is economically real but carried by two of the three names.
+\end{itemize}
+
+\begin{remark}[Honesty: rank 2 does not mean our spread is one of them]
+The Johansen test says two stationary directions exist. It does not say that the
+particular direction our rolling-OLS hedge constructs is one of them, and the
+$\alpha$-loading half of the VECM (which would tell us how fast each name corrects) is not
+estimated here. The honest summary is: the basket is cointegrated, the two dominant hedge
+weights are individually significant under HAC inference, \code{INTU}'s weight is not,
+and the traded spread is stationary by direct test --- which is the claim the strategy
+needs. That is stronger than ``the names are correlated'' and weaker than ``we have
+identified the cointegrating vector''.
+\end{remark}
+
+\begin{remark}[Honesty: \code{INTU} is insignificant but still useful]
+$\hat\beta_{\text{INTU}}=0.027$ with $t=0.45$ looks like a name that should be dropped ---
+and Phase~\ref{ch:phase5} found that Lasso/ElasticNet shrinkage in this direction
+\emph{degraded} the book. The resolution is that \code{INTU} is individually
+collinear with \code{CRM}/\code{ADSK} (VIF of Section~\ref{sec:ols:multicol} in the
+tens), so its marginal contribution is small while its variance-reducing contribution to
+the rolling hedge is not. This is a concrete case where a $t$-statistic is the wrong tool
+for the decision --- a point in favour of ridge's ``keep everything, shrink smoothly''
+prior over lasso's ``select'' prior for hedging.
+\end{remark}
+
+\subsection{Results: half-life versus holding period}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.85\linewidth]{figures/diagnostics_halflife.png}
+\caption{OU half-life (log scale) versus realized average holding period, for the static
+hedge and the traded rolling spread, full sample and 2022+. The two static-hedge bars
+($171$--$476$ bars) are not tradeable quantities; the rolling-spread half-life
+($\approx9.4$ bars) is, and the realized hold of $16$--$18$ bars is $1.7$--$1.9$ of it.}
+\label{fig:diag_halflife}
+\end{figure}
+
+Measured: traded (rolling) spread $\hat\tau_{1/2}=9.36$ bars (full) / $9.44$ bars (2022+);
+realized average holding period $16.2$ bars (full) / $17.3$ bars (2022+). By
+\eqref{eq:ou:gain} the strategy therefore captures $1-e^{-\theta h}=1-2^{-1.73}\approx70\%$
+(full sample) to $1-2^{-1.85}\approx72\%$ (test) of the expected reversion per trade. That
+is a sensible horizon by the theory of Chapter~\ref{ch:ou} --- not so short that it trades
+noise, not so long that it pays carry for a reversion that has already happened --- but it
+is on the turnover-heavy side given the cost drag measured in Phase~\ref{ch:phase4}, and
+the sensitivity analysis of Phase~\ref{ch:phase7} confirms that moving to fewer, longer
+trades is the biggest available net-Sharpe lever.
+
+The static hedge's nominal half-life of $\sim$171--476 bars is reported only to make the
+contrast vivid; it is not a strategy parameter, because a half-life estimated on a
+non-stationary residual measures the drift of the hedge, not the speed of a reversion.
+
+\subsection{A first multiple-testing note}
+
+This phase also recorded a preliminary hypothesis count
+(\code{results/tables/diagnostics\_multtest.csv}): 13 candidates scanned in the
+Phase~\ref{ch:phase5} walk-forward grid on one basket at fixed cost, with a Bonferroni
+threshold of $0.05/13=0.00385$. Phase~\ref{ch:phase10} supersedes it with the full audit
+over $M=44$ strategies on a common calendar, including White's Reality Check and Hansen's
+SPA. The interim number is kept in the results tree because it documents that the count
+was being tracked from the first phase in which a choice was made, not retrofitted at the
+end.
+
+\subsection{Exit gate --- status}
+
+\begin{itemize}
+  \item[\checkmark] all specified diagnostics run and tabulated for the final models
+    (stationarity, cointegration, autocorrelation, heteroskedasticity, HAC, OU);
+  \item[\checkmark] HAC before/after $t$-statistics reported, not just the corrected ones;
+  \item[\checkmark] half-life versus holding-period mismatch explicitly discussed;
+  \item[\checkmark] a numeric multiple-testing threshold recorded (superseded by
+    Phase~\ref{ch:phase10});
+  \item[\checkmark] the diagnostics operate on the \emph{same} series the backtest trades
+    (via \code{spread\_residuals.csv}).
+\end{itemize}

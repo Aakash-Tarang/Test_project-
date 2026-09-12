@@ -1,0 +1,306 @@
+% =============================================================================
+%  CHAPTER 1 -- WHAT STATISTICAL ARBITRAGE ACTUALLY IS
+% =============================================================================
+\section{What statistical arbitrage actually is}
+\label{ch:whatissaa}
+
+\subsection{The idea, with no mathematics at all}
+\label{sec:saa:idea}
+
+Take two companies that do nearly the same thing. In this project the cleanest example
+is Adobe (\code{ADBE}) and its application-software peers Salesforce (\code{CRM}),
+Autodesk (\code{ADSK}), and Intuit (\code{INTU}). All four sell software to businesses,
+all four are in the same GICS sector, all four are held by the same style of investor,
+and all four react to the same news: interest rates, enterprise IT budgets, cloud
+spending, the general appetite for growth stocks. Over years, their prices move
+together --- not identically, but together.
+
+Now suppose that on a particular day Adobe falls 3\% while its peers are flat. Nothing
+Adobe-specific happened: no earnings miss, no downgrade, no lawsuit. The likely
+explanation is a temporary, mechanical pressure --- a large fund redeeming and selling
+its most liquid name, an index rebalance, a block trade printed at an unfortunate
+price. If that is the explanation, the price gap is \emph{temporary}: it should close.
+
+The trade writes itself. Sell Adobe short, buy the peers, and wait for the gap to
+close. If Adobe recovers, the short loses but the peers (which you own) probably also
+rise, and the \emph{difference} still narrows. If the whole sector falls, the short
+makes money and the peers lose --- again the difference is what matters. The position
+is close to indifferent to the direction of the market: it bets only on the
+\emph{relationship} reverting.
+
+That indifference is the whole point. A bet on ``the market goes up'' is a bet you
+cannot win reliably; a bet on ``Adobe and Autodesk return to their normal relative
+pricing'' is a much narrower, much more testable claim. Statistical arbitrage is the
+industrialised version of this: find relationships that are statistically stable,
+measure how far apart the names currently are, trade the gap when it is unusually
+large, and hold a diversified book of such trades so that no single relationship has to
+be right.
+
+\begin{intuition}
+Statistical arbitrage is not ``arbitrage'' in the textbook sense. Textbook arbitrage is
+riskless: buy for \$10 here, sell for \$10.05 there, simultaneously, guaranteed profit.
+Statistical arbitrage is a \emph{statistical} bet: the gap has closed often enough in
+the past that we expect it to close again, on average, more often than not. It can and
+does lose money --- sometimes for months --- when a relationship permanently breaks
+(Adobe stops being like Autodesk because one of them changes business model). The word
+``arbitrage'' survives only because the positions are hedged, not because they are
+riskless.
+\end{intuition}
+
+\subsection{From pairs to baskets: why more than two legs}
+\label{sec:saa:baskets}
+
+The two-name version (``pairs trading'') is the oldest and simplest form
+\cite{gatev2006pairs}. It has a well-known weakness: with only one hedge leg, all the
+idiosyncratic risk of that one hedge name sits in your position. If Autodesk has an
+earnings surprise, your ``market-neutral'' trade takes a direct hit that has nothing to
+do with the mispricing you were betting on.
+
+A \emph{basket} hedge fixes this by spreading the hedge over several related names. Now
+the question becomes quantitative: how much of each peer should I hold against one unit
+of the target? That is a regression question, and regression is the mathematical core
+of this entire project:
+\begin{itemize}
+  \item \textbf{Which names} belong in the basket? (selection: lasso, elastic net,
+    principal components --- Chapter~\ref{ch:regularization})
+  \item \textbf{How much} of each? (estimation: OLS, ridge --- Chapter~\ref{ch:ols})
+  \item \textbf{Do the amounts change over time?} (adaptive estimation: rolling windows,
+    Kalman filter --- Chapter~\ref{ch:kalman})
+  \item \textbf{Is the leftover gap stationary}, i.e.\ does it actually revert, or does
+    it drift apart forever? (unit-root and cointegration tests ---
+    Chapter~\ref{ch:timeseries})
+  \item \textbf{How fast} does it revert, and is that fast enough to beat trading costs?
+    (Ornstein--Uhlenbeck half-life --- Chapter~\ref{ch:ou})
+\end{itemize}
+Those five questions are the skeleton of the whole report, and they are asked in that
+order in Part~II.
+
+The systematic, factor-based version of the same idea --- regress each name on a set of
+risk factors (sector ETFs, PCA factors) and trade the residual --- is
+\cite{avellaneda2010statistical}, the central reference for basket construction and
+residual dynamics. Our implementation is closer to the ``economic basket'' variant: the
+basket is chosen for economic coherence (same sub-industry) and the weights are
+estimated by regression, rather than being read off a global factor model.
+
+\subsection{Market neutrality, precisely}
+\label{sec:saa:neutrality}
+
+``Market neutral'' is a marketing phrase unless it is defined. There are three distinct
+levels, and this project enforces the first two and measures the third.
+
+\paragraph{(1) Dollar neutrality.} The position's long notional equals its short
+notional. With a target $T$ and hedge weights $\beta_1,\dots,\beta_n$ on basket names,
+we short \$1 of the target and buy $\beta_i$ dollars of name $i$, then rescale the
+whole book by the \emph{grossing factor}
+\begin{equation}
+  g \;=\; 1 + \sum_{i=1}^{n}\lvert \beta_i\rvert ,
+  \qquad
+  \text{positions} = \frac{1}{g}\Bigl(-1,\ \beta_1,\dots,\beta_n\Bigr),
+  \label{eq:grossing}
+\end{equation}
+so that gross notional is exactly \$1 and net dollar exposure is
+$\tfrac{1}{g}\bigl(-1+\sum_i\beta_i\bigr)$, which is zero whenever $\sum_i\beta_i=1$.
+Dollar neutrality kills the first-order effect of ``everything goes up''.
+
+\paragraph{(2) Beta neutrality.} Dollar neutrality is not enough: if the target is
+twice as volatile as the basket, a dollar-neutral book still has net market exposure.
+Beta neutrality requires the position's market beta to vanish,
+\begin{equation}
+  \beta_{\text{book}} \;=\; \sum_{i} w_i\,\beta_{i,\text{mkt}} \;=\; 0 .
+  \label{eq:betaneutral}
+\end{equation}
+Regressing the target on economically related names does most of this work implicitly:
+the fitted values $\hat y_t = \hat\alpha_t + x_t^{\top}\hat\beta_t$ absorb the common
+(sector/market) component, so the residual is by construction orthogonal to the
+regressors --- \emph{in sample}. Out of sample, and with time-varying betas, residual
+orthogonality degrades; that is exactly what the diagnostics of
+Chapter~\ref{ch:timeseries} and the portfolio risk measurements of
+Phase~\ref{ch:phase7} quantify.
+
+\paragraph{(3) Factor neutrality.} Real funds neutralize a whole risk model (market,
+size, value, momentum, sector, volatility). This project does not: it has one basket
+per strategy and reports the aggregate book's realized exposure. Stated as a non-goal
+in Chapter~\ref{ch:nongoals}.
+
+\begin{remark}[Honesty]
+A book that is dollar-neutral and roughly beta-neutral is \emph{not} riskless. It still
+carries: (i) \emph{relative-value risk} --- the spread can widen before it narrows, and
+can widen permanently; (ii) \emph{liquidity risk} --- the short leg must be borrowable,
+and borrow costs rise exactly when the trade is crowded; (iii) \emph{tail risk} --- in
+the March 2020 dislocation, correlations went to one and relative-value books lost
+money on both legs' financing. The empirical chapters report drawdowns and tail
+measures, not just averages, for this reason.
+\end{remark}
+
+\subsection{Anatomy of one trade, in formulas}
+\label{sec:saa:anatomy}
+
+This subsection is a preview; every object here is derived properly in Part~I and
+implemented in Part~II. The pipeline has five stages, and the C++ engine
+(Chapter~\ref{ch:phase3}) has one module per stage.
+
+\paragraph{Stage 1 --- Estimate the relationship.} At bar $t$, using only bars up to
+$t-1$, fit the target's log price on the basket's log prices over a trailing window of
+$W$ bars:
+\begin{equation}
+  y_{s} \;=\; \alpha_t + \sum_{i=1}^{n}\beta_{i,t}\,x_{i,s} + \eps_{s},
+  \qquad s = t-W,\dots,t-1 .
+  \label{eq:saa:regression}
+\end{equation}
+The subscript on $\alpha_t,\beta_{i,t}$ reminds us that these are re-estimated as the
+window rolls; that time-variation is a feature, not a nuisance
+(Chapter~\ref{ch:kalman}).
+
+\paragraph{Stage 2 --- Form the spread.} Apply the just-estimated hedge to bar $t$:
+\begin{equation}
+  S_t \;=\; y_t - \hat\alpha_t - \sum_{i=1}^{n}\hat\beta_{i,t}\,x_{i,t}.
+  \label{eq:saa:spread}
+\end{equation}
+$S_t$ is the mispricing candidate: how far the target is from where the basket says it
+should be.
+
+\paragraph{Stage 3 --- Standardize.} Raw spread units are meaningless across baskets and
+across volatility regimes, so convert to a $z$-score using the window's own residual
+statistics:
+\begin{equation}
+  z_t \;=\; \frac{S_t - \hat\mu_{S,t}}{\hat\sigma_{S,t}},
+  \qquad
+  \hat\mu_{S,t}=\frac{1}{W}\sum_{s=t-W}^{t-1}S_s,\quad
+  \hat\sigma^2_{S,t}=\frac{1}{W-1}\sum_{s=t-W}^{t-1}(S_s-\hat\mu_{S,t})^2 .
+  \label{eq:saa:z}
+\end{equation}
+Now ``$z_t=+2$'' means ``two standard deviations rich relative to its own recent
+history'', comparable across names and years.
+
+\paragraph{Stage 4 --- Decide.} A threshold policy with an entry band and an exit band:
+\begin{equation}
+  \text{position}_{t+1} =
+  \begin{cases}
+    -1 & \text{if } z_t \ge z_{\text{entry}} \quad(\text{target rich: short target, long basket})\\
+    +1 & \text{if } z_t \le -z_{\text{entry}} \quad(\text{target cheap: long target, short basket})\\
+    \ \ 0 & \text{if } \lvert z_t\rvert \le z_{\text{exit}} \quad(\text{converged: flat})\\
+    \text{unchanged} & \text{otherwise (hold inside the bands)}.
+  \end{cases}
+  \label{eq:saa:policy}
+\end{equation}
+The hysteresis (two bands instead of one) is what keeps turnover --- and therefore cost
+--- down: the book does not flip on every wiggle through zero. In this project the
+baseline is $z_{\text{entry}}=2.0$, $z_{\text{exit}}=0.5$, and
+Chapter~\ref{ch:phase7} maps the whole $(W, z_{\text{entry}})$ surface.
+
+\paragraph{Stage 5 --- Execute and pay.} The decision made with data through close($t$)
+is executed on bar $t+1$ --- never on bar $t$. Costs are charged on traded notional:
+proportional cost $c$ (baseline 10\,bps one-way, swept 0--50\,bps) plus a square-root
+market-impact term (Chapter~\ref{ch:backtestmath}). Gross and net P\&L are always both
+reported.
+
+\begin{intuition}
+Read the five stages as a funnel. Stage 1--2 decide \emph{what} the signal is; stage 3
+puts it in comparable units; stage 4 decides \emph{when} to act; stage 5 decides what it
+\emph{costs} to act. Almost every way this kind of strategy lies to you is a bug in one
+of these five stages: a non-causal stage 1 (lookahead), a stage 3 that uses full-sample
+$\hat\sigma_S$ (subtle lookahead), a stage 4 tuned on the test period (data snooping),
+or a stage 5 with no costs (the classic fantasy backtest). Each stage therefore gets
+its own unit test in this repository.
+\end{intuition}
+
+\subsection{Where could the edge come from?}
+\label{sec:saa:economics}
+
+A profitable systematic strategy needs a reason to exist --- either someone is being
+compensated for bearing a risk you are happy to bear, or someone else is making a
+mistake you are equipped to exploit, or a friction prevents others from competing the
+profit away. For basket stat-arb the candidate explanations are:
+
+\begin{enumerate}
+  \item \textbf{Temporary liquidity / demand pressure.} Large uninformed order flow
+    (redemptions, index events, block trades) moves a single name relative to its
+    economic peers. Risk-arbitrageurs with balance-sheet capacity earn a premium for
+    absorbing it. This is a \emph{risk premium}: the compensation is for holding an
+    position that can get worse before it gets better, and for the small probability
+    that the relationship never reverts.
+  \item \textbf{Limited attention / slow information diffusion.} News about a sector
+    propagates across names with a lag; the laggards are predictable from the leaders.
+    This is a behavioural explanation and it decays as more capital watches for it.
+  \item \textbf{Frictions.} Short-sale costs, borrow constraints, and margin
+    requirements keep mispricings alive that would otherwise be trivially arbitraged.
+    The same frictions apply to you: your net return is the gross mispricing minus the
+    cost of the borrow and the cost of the round trip.
+  \item \textbf{It does not exist (any more).} The honest default. Pairs trading
+    profitability has been documented to decay \cite{dofaff2010does}, and the most
+    crowded relative-value signals are the first to be competed away.
+\end{enumerate}
+
+This project cannot distinguish between explanations 1--3, and says so. What it
+\emph{can} do is measure the size of the effect after costs, and ask whether that size
+is distinguishable from zero once the number of things searched for is taken into
+account. That is Chapters~\ref{ch:backtestmath}--\ref{ch:multipletesting}, and the
+answer here is ``not distinguishable'' --- which is a legitimate, publishable, and
+useful result.
+
+\subsection{The four ways this kind of project lies to you}
+\label{sec:saa:lies}
+
+Everything in the design of this repository is a response to one of these four.
+
+\begin{enumerate}[label=\textbf{Lie \arabic*.}]
+  \item \textbf{Lookahead bias.} Using information at time $t$ that was not available
+    until after $t$. The subtle forms are the killers: standardizing by the
+    full-sample $\sigma$, choosing the basket after seeing which spread reverted best,
+    filling missing prices with the next available value. \emph{Defence here:} the
+    estimation window ends at $t-1$, execution is at $t+1$, one C++ unit test
+    manufactures a single large mispricing and asserts the position is never active on
+    the signal day, and the Kalman test asserts $\beta_{t\mid t-1}$ depends only on bars
+    $<t$.
+  \item \textbf{Survivorship bias.} Using a universe of names that all survived to the
+    end of the sample. Companies that were acquired, delisted, or went bankrupt
+    disappear from most free data sources, and their disappearance flatters every
+    strategy. \emph{Defence here:} none available in-sandbox --- the panel is
+    survivorship-biased and Chapter~\ref{ch:phase1} quantifies and discloses it rather
+    than pretending. This is a real limitation and it biases results \emph{upward}.
+  \item \textbf{Data snooping / multiple testing.} Try 44 configurations, report the
+    best, call it a discovery. With 44 independent null strategies, the chance that at
+    least one shows $p<0.05$ is $1-0.95^{44}\approx 89\%$. \emph{Defence here:} a full
+    hypothesis-count audit, Bonferroni, White's Reality Check, Hansen's SPA, and
+    pairwise Diebold--Mariano tests (Chapter~\ref{ch:multipletesting},
+    Phase~\ref{ch:phase10}).
+  \item \textbf{Ignoring costs.} A daily-frequency strategy that turns over 133--362
+    round trips over sixteen years pays, at 10\,bps one-way, a drag that in this
+    project is \emph{larger than the gross edge}. \emph{Defence here:} every result is
+    reported gross and net, with a 0--50\,bps sensitivity sweep.
+\end{enumerate}
+
+\subsection{The base model, stated once and for all}
+\label{sec:basemodel}
+
+For a target asset $Y_t$ and a basket of $n$ candidate assets $X_{1,t},\dots,X_{n,t}$,
+\begin{equation}
+  Y_t \;=\; \alpha + \sum_{i=1}^{n}\beta_i\,X_{i,t} + \eps_t ,
+  \label{eq:basemodel}
+\end{equation}
+where $\eps_t$ is the tradeable signal. Which $Y$ and $X$ to use (levels or logs or
+returns), which $X$'s to include, how to estimate $\beta$, how often to re-estimate it,
+and how to map $\eps_t$ into positions and pay for the privilege --- that is the entire
+substance of the following forty-odd pages.
+
+\subsection{What this project contributes}
+\label{sec:saa:contribution}
+
+Not a new alpha. Instead: a complete, reproducible, adversarially self-critiqued
+implementation of the basket stat-arb idea, in which
+\begin{itemize}
+  \item the statistical layer is a tested library (\code{scripts/statkit/}, 35 unit
+    tests on synthetic data where the truth is known, so the tests can actually fail);
+  \item the simulation layer is a dependency-free C++ engine with per-stage latency
+    histograms, allocation counting, and no-lookahead assertions (\code{src/},
+    \code{test/}, \code{bench/});
+  \item the two layers are cross-checked against each other (brute-force vs.\
+    incremental regression to $10^{-8}$; Python vs.\ C++ walk-forward hedges);
+  \item every headline number is accompanied by the correction that could destroy it;
+  \item the report is \emph{built} from \code{results/} by
+    \code{report/build_report.py}, so the numbers cannot drift from the code.
+\end{itemize}
+
+The value of a negative result delivered this way is that it is \emph{falsifiable and
+re-runnable}: you can change the universe, the cost, or the penalty and see exactly
+which conclusions move.

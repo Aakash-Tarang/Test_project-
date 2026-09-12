@@ -1,0 +1,190 @@
+% =============================================================================
+%  APPENDIX C -- REPRODUCIBILITY MANUAL
+% =============================================================================
+\section{Reproducibility manual}
+\label{ch:reproducibility}
+
+This appendix is the operating manual: exact commands, exact expected outputs, and the map
+from every number in the book to the script that produces it. A reader should be able to
+start from a fresh clone and verify every claim.
+
+\subsection{Requirements}
+
+\begin{itemize}
+  \item POSIX shell, \code{g++} with C++17 (tested: g++ 12.2), \code{make},
+    \code{cmake} $\ge3.20$ (installed user-level by \code{setup.sh} if absent),
+    Python $\ge3.9$ (tested: 3.11).
+  \item Python packages: \code{numpy}, \code{pandas}, \code{scipy}, \code{statsmodels},
+    \code{matplotlib}, \code{seaborn}, \code{scikit-learn}, \code{joblib}, \code{pyyaml},
+    \code{reportlab}, \code{yfinance} (the last only if you re-download data externally).
+  \item Network: PyPI (for the above). \emph{Not} required for the analysis --- the raw
+    price panel is committed under \code{data/raw/yfinance/} precisely so that no
+    market-data endpoint is needed at run time.
+  \item A TeX distribution (\code{latexmk} or \code{pdflatex} + \code{biber}) \emph{only}
+    if you want \code{report.pdf}. The HTML book needs nothing but matplotlib.
+  \item Resources used by the full run: $\approx1.5$\,GB disk (mostly
+    \code{data/processed/universe.csv}), $\approx1$\,GB peak RAM, 2 cores,
+    $\approx12$ minutes.
+\end{itemize}
+
+\subsection{The full run}
+
+\begin{verbatim}
+# 0. toolchain (idempotent, safe to re-run)
+bash environment/setup.sh
+export PATH="$HOME/.local/bin:$PATH"        # user-level cmake lives here
+
+# 1. data: raw (committed) -> cleaned panel -> QA gate -> summary tables/figures
+python3 scripts/data/clean.py
+python3 scripts/data/qa.py
+python3 scripts/analysis/make_data_summary.py
+python3 scripts/plotting/render_report_data.py
+
+# 2. basket exports for the engine (strictly balanced panels)
+python3 scripts/data/export_engine_input.py --target ADBE --basket CRM ADSK INTU
+python3 scripts/data/export_engine_input.py --target AVGO --basket ADI INTC AAPL
+python3 scripts/data/export_engine_input.py --target GS   --basket BAC
+python3 scripts/data/export_engine_input.py --target CAT  --basket HON
+
+# 3. C++ engine + microbenchmarks + unit tests
+cmake -S src -B build && cmake --build build -j2
+./build/statarbsim --version
+./build/statarbsim --test
+./build/statarbsim --demo
+./build/microbench
+
+# 4. Python test suites
+python3 scripts/run_statkit_tests.py
+python3 scripts/test_kalman.py
+python3 scripts/test_nonlinear.py
+
+# 5. experiments -> results/tables/*.csv  (capture scripts)
+python3 scripts/analysis/capture_engine_bench.py
+python3 scripts/analysis/capture_backtest.py
+python3 scripts/analysis/compare_models.py
+python3 scripts/analysis/run_diagnostics.py
+python3 scripts/analysis/capture_portfolio.py
+python3 scripts/analysis/compare_kalman.py
+python3 scripts/analysis/compare_nonlinear.py
+python3 scripts/analysis/compare_multtest.py
+python3 scripts/analysis/make_statkit_validation.py
+python3 scripts/analysis/make_book_tables.py
+
+# 6. results -> figures + report/tables/*.tex  (render scripts)
+for s in scripts/plotting/render_*.py; do python3 "$s"; done
+
+# 7. the whole exit gate, then the book
+bash environment/check.sh
+python3 report/build_report.py
+\end{verbatim}
+
+Steps 5--7 are all performed automatically by \code{check.sh} and
+\code{build\_report.py}; they are listed individually so that a single artifact can be
+regenerated in isolation.
+
+\subsection{Expected outputs, step by step}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{p{0.24\linewidth}p{0.34\linewidth}p{0.34\linewidth}}
+\toprule
+Step & Console output & Artifacts \\
+\midrule
+\code{clean.py} & \code{wrote data/processed/universe.csv (764,896 rows, 195 tickers)} & \code{universe.csv}, \code{symbols.csv} (505 rows), \code{\_meta.json} \\
+\code{qa.py} & \code{QA result: 10/10 passed, 0 failed} & \code{results/tables/qa\_gaps.csv} \\
+\code{make\_data\_summary.py} & \code{wrote results/tables/\{data\_summary,universe\_by\_year,sector\_counts\}.csv} & those CSVs \\
+\code{export\_engine\_input.py} & \code{wrote .../ADBE.csv (4190 rows x 4 cols)} and the date range & \code{data/processed/engine/*.\{csv,json\}} \\
+\code{cmake --build} & \code{[100\%] Built target statarbsim} & \code{build/statarbsim}, \code{build/microbench} \\
+\code{--test} & \code{24 tests run, 0 failed, 2852 checks} & --- \\
+\code{--demo} & per-stage latency summary & --- \\
+\code{run\_statkit\_tests.py} & \code{== statkit tests: 35 passed, 0 failed ==} & --- \\
+\code{capture\_backtest.py} & cost-sweep rows & \code{backtest\_summary.csv}, \code{results/backtests/} \\
+\code{compare\_models.py} & per-estimator summary & \code{model\_compare\_\{summary,sweep\}.csv} \\
+\code{run\_diagnostics.py} & per-model stationarity verdicts & \code{diagnostics\_\{summary,coint,halflife,multtest\}.csv}, \code{spread\_residuals.csv} \\
+\code{capture\_portfolio.py} & \code{book budget verified at every monthly rebalance: ...} & \code{portfolio\_\{summary,daily,regime,heat\_ez,heat\_ridge\}.csv} \\
+\code{compare\_kalman.py} & $q$-sweep rows & \code{kalman\_summary.csv} \\
+\code{compare\_nonlinear.py} & per-basket IC/$R^2$, RESET, gates & \code{nonlinear\_\{summary,reset,learning,trading\}.csv} \\
+\code{compare\_multtest.py} & \code{matrix: T=3979 days, M=44 strategies} + corrections + DM & \code{multtest\_\{audit,corrections,dm,pnl\}.csv} \\
+\code{make\_book\_tables.py} & \code{wrote report/tables/*.tex} lines & 6 \code{.tex} tables + \code{power\_dsr.csv} \\
+\code{check.sh} & \code{== RESULT: 52 passed, 0 failed ==} & --- \\
+\code{build\_report.py} & \code{[1/3] Regenerating ... [3/3] Rendering ...} & 22 PNGs in \code{results/figures/}, \code{report/figures/}, \code{report/report.html} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Which number comes from which script}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{p{0.30\linewidth}p{0.34\linewidth}p{0.30\linewidth}}
+\toprule
+Book location & CSV & Capturing script \\
+\midrule
+Ch.~\ref{ch:phase1} data tables & \code{data\_summary}, \code{sector\_counts}, \code{universe\_by\_year}, \code{qa\_gaps} & \code{clean.py}, \code{qa.py}, \code{make\_data\_summary.py} \\
+Ch.~\ref{ch:phase2}, App.~\ref{ch:statkitappendix} & \code{statkit\_validation} & \code{make\_statkit\_validation.py} \\
+Ch.~\ref{ch:phase4} cost sweep, equity & \code{backtest\_summary} & \code{capture\_backtest.py} \\
+Ch.~\ref{ch:phase5} estimator comparison & \code{model\_compare\_summary}, \code{model\_compare\_sweep} & \code{compare\_models.py} \\
+Ch.~\ref{ch:phase6} diagnostics & \code{diagnostics\_summary}, \code{diagnostics\_coint}, \code{diagnostics\_halflife}, \code{spread\_residuals} & \code{run\_diagnostics.py} \\
+Ch.~\ref{ch:phase7} book, regimes, heatmaps & \code{portfolio\_summary}, \code{portfolio\_regime}, \code{portfolio\_daily}, \code{portfolio\_heat\_ez}, \code{portfolio\_heat\_ridge} & \code{capture\_portfolio.py} \\
+Ch.~\ref{ch:phase8} Kalman sweep & \code{kalman\_summary} & \code{compare\_kalman.py} \\
+Ch.~\ref{ch:phase9} nonlinear & \code{nonlinear\_summary}, \code{nonlinear\_reset}, \code{nonlinear\_learning}, \code{nonlinear\_trading} & \code{compare\_nonlinear.py} \\
+Ch.~\ref{ch:phase10}, \ref{ch:multipletesting} audit & \code{multtest\_audit}, \code{multtest\_corrections}, \code{multtest\_dm}, \code{multtest\_pnl}, \code{power\_dsr} & \code{compare\_multtest.py}, \code{make\_book\_tables.py} \\
+Ch.~\ref{ch:phase11}, \ref{ch:systems} systems & \code{engine\_latency}, \code{engine\_bench} & \code{capture\_engine\_bench.py} (from \code{statarbsim --demo}, \code{microbench}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Determinism and where numbers legitimately move}
+
+\begin{itemize}
+  \item \textbf{Deterministic:} the data pipeline, all hedges, all backtests, all
+    diagnostics, and every table. Re-running produces identical CSVs.
+  \item \textbf{Seeded-random:} the stationary bootstrap in the Reality Check, SPA, and
+    Sharpe confidence intervals (\code{SEED = 11}, $B=1{,}200$, mean block 10). Identical on
+    re-run; different if the seed changes, which is why the seed is in the source.
+  \item \textbf{Non-deterministic across machines:} the latency and microbenchmark numbers
+    (\code{engine\_latency.csv}, \code{engine\_bench.csv}). These are measurements of a
+    shared 2-core sandbox and move by tens of percent between runs --- an earlier session
+    recorded a regression p50 of $518$\,ns and a \code{deque} ratio of $1.264\times$; builds
+    since have recorded $599.5$\,ns and ratios of $1.084\times$, $1.264\times$ and
+    $1.333\times$, and a SoA/AoS ratio between $1.033\times$ and $1.509\times$. The tables
+    always show the latest run; the prose quotes ranges and mechanisms instead of point
+    estimates, precisely because the point estimates are not reproducible to better than
+    tens of percent on a shared 2-core host.
+\end{itemize}
+
+\subsection{Troubleshooting}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{0.34\linewidth}p{0.58\linewidth}}
+\toprule
+Symptom & Cause and fix \\
+\midrule
+\code{cmake: command not found} & \code{\$HOME/.local/bin} is not on \code{PATH}: \code{export PATH="\$HOME/.local/bin:\$PATH"} after \code{setup.sh} \\
+\code{pip} refuses to install & PEP-668 externally-managed environment: \code{setup.sh} already passes \code{--user --break-system-packages}; use it rather than raw \code{pip install} \\
+\code{FileNotFoundError: data/processed/universe.csv} & \code{clean.py} has not run. It needs \code{data/raw/yfinance/*.csv}, which are committed \\
+\code{export\_engine\_input.py} writes 0 rows & a basket ticker is missing from the panel; check \code{data/processed/symbols.csv} and the raw CSV list \\
+capture script fails with \code{build/statarbsim not found} & run the \code{cmake} step (3) first \\
+\code{check.sh} reports \code{[FAIL] multtest ...} & \code{compare\_multtest.py} has not been run in this checkout, or the honesty gate tripped --- read the gate conditions in \code{check.sh} before assuming a regression \\
+\code{report.html} has no figures & \code{results/figures/} is empty: run step 6 (the \code{render\_*} scripts) or just \code{build\_report.py}, which regenerates them \\
+No \code{report.pdf} & expected in this sandbox: no TeX engine is installable. Compile \code{report/report.tex} on any machine with TeX Live/MiKTeX \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Version and provenance of this build}
+
+\begin{itemize}
+  \item Engine version string: \code{statarbsim 0.4.0 (C++ engine, Part 4)}.
+  \item Data: Yahoo Finance daily OHLCV + Adj Close, retrieved 2026-09-04, 195 tickers,
+    2010-01-04 to 2026-09-01, committed as raw CSVs with SHA-256 manifests written by
+    \code{download.py}.
+  \item Exit gate at the time of writing: \code{check.sh} \textbf{52 passed, 0 failed};
+    C++ \textbf{24 tests / 2{,}852 checks / 0 failures}; statkit \textbf{35 passed}.
+  \item Every figure in \code{results/figures/} carries a provenance footer naming the
+    script, the timestamp, and the input CSV it was rendered from, so a figure can be traced
+    without reading this appendix.
+\end{itemize}
