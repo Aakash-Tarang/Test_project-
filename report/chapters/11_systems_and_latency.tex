@@ -204,13 +204,16 @@ counts and returns the \emph{lower edge} of the bucket containing the $q$-th sam
 The percentiles in Table~\ref{tab:engine_latency} are \emph{bucket edges}, and reading them
 as if they were raw order statistics is the easiest mistake available here. For
 \code{regression\_update} the p50 edge is $599.5$\,ns; the ladder above it is
-$599.5\times1.158=694$\,ns, then $804$, $931$, $1078$, $1248$\,ns. Two regimes have been
-observed in different builds of the same code. When the distribution is tight, p50, p95 and
-p99 all report the \emph{same} edge ($599.5 / 599.5 / 599.5$\,ns) --- which is the
+$693.9$\,ns, then $803.1$, $929.5$, $1075.8$, $1245.2$\,ns (edge $i$ of the histogram is
+$10\cdot10^{4i/63}$\,ns, so $599.5$ is edge 28 and $1075.8$ is edge 32). Two regimes have
+been observed in different builds of the same code. When the distribution is tight, p50, p95
+and p99 all report the \emph{same} edge ($599.5 / 599.5 / 599.5$\,ns) --- which is the
 resolution limit of the histogram, not a claim that the distribution is degenerate. When
-there is more tail, they step up the ladder ($599.5 / 1075.8 / 2234.6$\,ns in the build
-that produced the current table). In both regimes the mean, which is computed from the raw
-samples rather than from the histogram, lies above the p50 edge ($660$--$766$\,ns observed),
+there is more tail, they step up the ladder: three consecutive builds of this binary printed
+$599.5/599.5/599.5$, $599.5/1075.8/2234.6$ and $599.5/1075.8/1075.8$\,ns, i.e.\ the p95
+edge moved from 28 to 32 and the p99 edge from 28 to 37 and back to 32. In both regimes the
+mean, which is computed from the raw samples rather than from the histogram, lies above the
+p50 edge ($660$--$766$\,ns observed),
 confirming mass spread through and beyond it. With 30{,}000 samples the true p99 is
 somewhere between the reported edge and the next few edges, plus whatever right tail the
 host produced that minute; stating the bucket edge is the correct, non-overclaiming

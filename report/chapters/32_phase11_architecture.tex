@@ -159,14 +159,16 @@ Reading of Table~\ref{tab:engine_latency}, including its limitations:
     instrument has 64 logarithmically spaced buckets over
     $[10\,\text{ns},100\,\mu\text{s}]$, so each bucket spans a factor
     $10^{4/63}=1.158$, and the reported quantile is the \emph{lower edge} of the bucket
-    containing it. $599.5$\,ns is such an edge (the next is $694$\,ns, then $804$\,ns,
-    $931$\,ns, $1078$\,ns). Two consequences follow, and both have been observed: when the
+    containing it. $599.5$\,ns is such an edge --- edge 28 of
+    $\text{edge}_i=10\cdot10^{4i/63}$\,ns --- and the ladder above it is $693.9$, $803.1$,
+    $929.5$, $1075.8$, $1245.2$\,ns. Two consequences follow, and both have been observed: when the
     distribution is tight, p50, p95 and p99 all report the \emph{same} edge (an earlier
     build printed $599.5$ for all three, which is a resolution artifact, not a degenerate
-    distribution); when it is not, they step up the ladder of edges, as in the build that
-    produced the table above ($599.5 / 1075.8 / 2234.6$\,ns). The mean, which is computed
-    from the raw samples and not from the histogram, lies above the p50 edge in every build
-    ($660$--$766$\,ns observed) --- confirming mass spread through and beyond it. Reporting
+    distribution); when it is not, they step up the ladder of edges --- the last three
+    builds of this binary printed $599.5/599.5/599.5$, $599.5/1075.8/2234.6$ and
+    $599.5/1075.8/1075.8$\,ns, and the table above carries whichever run is newest. The
+    mean, which is computed from the raw samples and not from the histogram, lies above the
+    p50 edge in every build ($660$--$766$\,ns observed) --- confirming mass spread through and beyond it. Reporting
     bucket edges rather than inventing intermediate values is the honest convention;
     tightening the range to $[100\,\text{ns},10\,\mu\text{s}]$ would resolve the tail and is
     listed as a small improvement in Chapter~\ref{ch:conclusion}.
